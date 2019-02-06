@@ -37,25 +37,27 @@ done
 
 BUILD_ROOT=`pwd`
 cd ../../..
+# Note: here we go to parent directory that contains current project,
+# so the checkout is nearby, same as expected for usual developer work
 
 #   Check dependent projects
 if [ ! -d libzmq ]; then
     echo "I:    cloning https://github.com/zeromq/libzmq.git into `pwd`/libzmq..."
-    git clone $QUIET https://github.com/zeromq/libzmq.git
+    git clone $QUIET https://github.com/zeromq/libzmq.git || exit
 fi
 if [ ! -f libzmq/builds/gyp/project.gyp ]; then
-    echo "E:    `pwd`/libzmq out of date (builds/gyp/project.gyp missing)"
-    exit
+    echo "E:    `pwd`/libzmq out of date (builds/gyp/project.gyp missing)" >&2
+    exit 1
 fi
 
 #   Check dependent projects
 if [ ! -d czmq ]; then
     echo "I:    cloning https://github.com/zeromq/czmq.git into `pwd`/czmq..."
-    git clone $QUIET https://github.com/zeromq/czmq.git
+    git clone $QUIET https://github.com/zeromq/czmq.git || exit
 fi
 if [ ! -f czmq/builds/gyp/project.gyp ]; then
-    echo "E:    `pwd`/czmq out of date (builds/gyp/project.gyp missing)"
-    exit
+    echo "E:    `pwd`/czmq out of date (builds/gyp/project.gyp missing)" >&2
+    exit 1
 fi
 
 

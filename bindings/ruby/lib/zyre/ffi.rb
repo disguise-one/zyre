@@ -61,6 +61,7 @@ module Zyre
       attach_function :zyre_set_header, [:pointer, :string, :string, :varargs], :void, **opts
       attach_function :zyre_set_verbose, [:pointer], :void, **opts
       attach_function :zyre_set_port, [:pointer, :int], :void, **opts
+      attach_function :zyre_set_beacon_peer_port, [:pointer, :int], :void, **opts
       attach_function :zyre_set_evasive_timeout, [:pointer, :int], :void, **opts
       attach_function :zyre_set_expired_timeout, [:pointer, :int], :void, **opts
       attach_function :zyre_set_interval, [:pointer, :size_t], :void, **opts
@@ -73,6 +74,7 @@ module Zyre
       attach_function :zyre_gossip_bind, [:pointer, :string, :varargs], :void, **opts
       attach_function :zyre_gossip_connect, [:pointer, :string, :varargs], :void, **opts
       attach_function :zyre_gossip_connect_curve, [:pointer, :string, :string, :varargs], :void, **opts
+      attach_function :zyre_gossip_unpublish, [:pointer, :string], :void, **opts
       attach_function :zyre_start, [:pointer], :int, **opts
       attach_function :zyre_stop, [:pointer], :void, **opts
       attach_function :zyre_join, [:pointer, :string], :int, **opts

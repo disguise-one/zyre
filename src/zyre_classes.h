@@ -60,6 +60,17 @@ typedef struct _zyre_node_t zyre_node_t;
 //  *** To avoid double-definitions, only define if building without draft ***
 #ifndef ZYRE_BUILD_DRAFT_API
 
+//  *** Draft global constants, defined for internal use only ***
+#define ZAP_DOMAIN_DEFAULT  "global"           //  Default ZAP domain (auth)
+
+//  *** Draft method, defined for internal use only ***
+//  Set the TCP port bound by the ROUTER peer-to-peer socket (beacon mode).
+//  Defaults to * (the port is randomly assigned by the system).
+//  This call overrides this, to bypass some firewall issues when ports are
+//  random. Has no effect after zyre_start().
+ZYRE_PRIVATE void
+    zyre_set_beacon_peer_port (zyre_t *self, int port_nbr);
+
 //  *** Draft method, defined for internal use only ***
 //  This options enables a peer to actively contest for leadership in the
 //  given group. If this option is not set the peer will still participate in
@@ -89,6 +100,11 @@ ZYRE_PRIVATE void
 //  Set-up gossip discovery with CURVE enabled.
 ZYRE_PRIVATE void
     zyre_gossip_connect_curve (zyre_t *self, const char *public_key, const char *format, ...) CHECK_PRINTF (3);
+
+//  *** Draft method, defined for internal use only ***
+//  Unpublish a GOSSIP node from local list, useful in removing nodes from list when they EXIT
+ZYRE_PRIVATE void
+    zyre_gossip_unpublish (zyre_t *self, const char *node);
 
 //  *** Draft method, defined for internal use only ***
 //  Explicitly connect to a peer

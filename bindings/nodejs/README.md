@@ -103,6 +103,15 @@ that so you can create independent clusters on the same network, for
 e.g. development vs. production. Has no effect after zyre_start().
 
 ```
+nothing my_zyre.setBeaconPeerPort (Number)
+```
+
+Set the TCP port bound by the ROUTER peer-to-peer socket (beacon mode).
+Defaults to * (the port is randomly assigned by the system).
+This call overrides this, to bypass some firewall issues when ports are
+random. Has no effect after zyre_start().
+
+```
 nothing my_zyre.setEvasiveTimeout (Number)
 ```
 
@@ -199,6 +208,12 @@ nothing my_zyre.gossipConnectCurve (String, String)
 ```
 
 Set-up gossip discovery with CURVE enabled.
+
+```
+nothing my_zyre.gossipUnpublish (String)
+```
+
+Unpublish a GOSSIP node from local list, useful in removing nodes from list when they EXIT
 
 ```
 integer my_zyre.start ()

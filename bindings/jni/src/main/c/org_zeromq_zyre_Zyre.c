@@ -74,6 +74,12 @@ Java_org_zeromq_zyre_Zyre__1_1setPort (JNIEnv *env, jclass c, jlong self, jint p
 }
 
 JNIEXPORT void JNICALL
+Java_org_zeromq_zyre_Zyre__1_1setBeaconPeerPort (JNIEnv *env, jclass c, jlong self, jint port_nbr)
+{
+    zyre_set_beacon_peer_port ((zyre_t *) (intptr_t) self, (int) port_nbr);
+}
+
+JNIEXPORT void JNICALL
 Java_org_zeromq_zyre_Zyre__1_1setEvasiveTimeout (JNIEnv *env, jclass c, jlong self, jint interval)
 {
     zyre_set_evasive_timeout ((zyre_t *) (intptr_t) self, (int) interval);
@@ -162,6 +168,14 @@ Java_org_zeromq_zyre_Zyre__1_1gossipConnectCurve (JNIEnv *env, jclass c, jlong s
     zyre_gossip_connect_curve ((zyre_t *) (intptr_t) self, public_key_, "%s", format_);
     (*env)->ReleaseStringUTFChars (env, public_key, public_key_);
     (*env)->ReleaseStringUTFChars (env, format, format_);
+}
+
+JNIEXPORT void JNICALL
+Java_org_zeromq_zyre_Zyre__1_1gossipUnpublish (JNIEnv *env, jclass c, jlong self, jstring node)
+{
+    char *node_ = (char *) (*env)->GetStringUTFChars (env, node, NULL);
+    zyre_gossip_unpublish ((zyre_t *) (intptr_t) self, node_);
+    (*env)->ReleaseStringUTFChars (env, node, node_);
 }
 
 JNIEXPORT jint JNICALL

@@ -82,6 +82,8 @@ lib.zyre_set_verbose.restype = None
 lib.zyre_set_verbose.argtypes = [zyre_p]
 lib.zyre_set_port.restype = None
 lib.zyre_set_port.argtypes = [zyre_p, c_int]
+lib.zyre_set_beacon_peer_port.restype = None
+lib.zyre_set_beacon_peer_port.argtypes = [zyre_p, c_int]
 lib.zyre_set_evasive_timeout.restype = None
 lib.zyre_set_evasive_timeout.argtypes = [zyre_p, c_int]
 lib.zyre_set_expired_timeout.restype = None
@@ -106,6 +108,8 @@ lib.zyre_gossip_connect.restype = None
 lib.zyre_gossip_connect.argtypes = [zyre_p, c_char_p]
 lib.zyre_gossip_connect_curve.restype = None
 lib.zyre_gossip_connect_curve.argtypes = [zyre_p, c_char_p, c_char_p]
+lib.zyre_gossip_unpublish.restype = None
+lib.zyre_gossip_unpublish.argtypes = [zyre_p, c_char_p]
 lib.zyre_start.restype = c_int
 lib.zyre_start.argtypes = [zyre_p]
 lib.zyre_stop.restype = None
@@ -241,6 +245,15 @@ e.g. development vs. production. Has no effect after zyre_start().
         """
         return lib.zyre_set_port(self._as_parameter_, port_nbr)
 
+    def set_beacon_peer_port(self, port_nbr):
+        """
+        Set the TCP port bound by the ROUTER peer-to-peer socket (beacon mode).
+Defaults to * (the port is randomly assigned by the system).
+This call overrides this, to bypass some firewall issues when ports are
+random. Has no effect after zyre_start().
+        """
+        return lib.zyre_set_beacon_peer_port(self._as_parameter_, port_nbr)
+
     def set_evasive_timeout(self, interval):
         """
         Set the peer evasiveness timeout, in milliseconds. Default is 5000.
@@ -338,6 +351,12 @@ design, see the CZMQ zgossip class.
         Set-up gossip discovery with CURVE enabled.
         """
         return lib.zyre_gossip_connect_curve(self._as_parameter_, public_key, format, *args)
+
+    def gossip_unpublish(self, node):
+        """
+        Unpublish a GOSSIP node from local list, useful in removing nodes from list when they EXIT
+        """
+        return lib.zyre_gossip_unpublish(self._as_parameter_, node)
 
     def start(self):
         """

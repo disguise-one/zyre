@@ -7,7 +7,7 @@
 #ifndef Q_ZSOCK_H
 #define Q_ZSOCK_H
 
-#include "qzyre.h"
+#include "qtzyre.h"
 
 class QT_ZYRE_EXPORT QZsock : public QObject
 {
@@ -149,6 +149,7 @@ public:
     //      c = zchunk_t *
     //      f = zframe_t *
     //      h = zhashx_t *
+    //      l = zlistx_t * (DRAFT)
     //      U = zuuid_t *
     //      p = void * (sends the pointer value, only meaningful over inproc)
     //      m = zmsg_t * (sends all frames in the zmsg)
@@ -180,6 +181,7 @@ public:
     //      f = zframe_t ** (creates zframe)
     //      U = zuuid_t * (creates a zuuid with the data)
     //      h = zhashx_t ** (creates zhashx)
+    //      l = zlistx_t ** (creates zlistx) (DRAFT)
     //      p = void ** (stores pointer)
     //      m = zmsg_t ** (creates a zmsg with the remaining frames)
     //      z = null, asserts empty frame (0 arguments)
@@ -248,6 +250,49 @@ public:
     //  descriptor, return NULL; else if it looks like a libzmq socket handle,
     //  return the supplied value. Takes a polymorphic socket reference.
     static void * resolve (void *self);
+
+    //  Check whether the socket has available message to read.
+    bool hasIn ();
+
+    //  Get socket option `router_notify`.
+    //  Available from libzmq 4.3.0.
+    int routerNotify ();
+
+    //  Set socket option `router_notify`.
+    //  Available from libzmq 4.3.0.
+    void setRouterNotify (int routerNotify);
+
+    //  Get socket option `multicast_loop`.
+    //  Available from libzmq 4.3.0.
+    int multicastLoop ();
+
+    //  Set socket option `multicast_loop`.
+    //  Available from libzmq 4.3.0.
+    void setMulticastLoop (int multicastLoop);
+
+    //  Get socket option `metadata`.
+    //  Available from libzmq 4.3.0.
+    QString metadata ();
+
+    //  Set socket option `metadata`.
+    //  Available from libzmq 4.3.0.
+    void setMetadata (const QString &metadata);
+
+    //  Get socket option `loopback_fastpath`.
+    //  Available from libzmq 4.3.0.
+    int loopbackFastpath ();
+
+    //  Set socket option `loopback_fastpath`.
+    //  Available from libzmq 4.3.0.
+    void setLoopbackFastpath (int loopbackFastpath);
+
+    //  Get socket option `zap_enforce_domain`.
+    //  Available from libzmq 4.3.0.
+    int zapEnforceDomain ();
+
+    //  Set socket option `zap_enforce_domain`.
+    //  Available from libzmq 4.3.0.
+    void setZapEnforceDomain (int zapEnforceDomain);
 
     //  Get socket option `gssapi_principal_nametype`.
     //  Available from libzmq 4.3.0.

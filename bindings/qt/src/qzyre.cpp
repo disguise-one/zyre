@@ -5,7 +5,7 @@
 ################################################################################
 */
 
-#include "qzyre.h"
+#include "qtzyre.h"
 
 ///
 //  Copy-construct to return the proper wrapped c types
@@ -84,6 +84,17 @@ void QZyre::setVerbose ()
 void QZyre::setPort (int portNbr)
 {
     zyre_set_port (self, portNbr);
+
+}
+
+///
+//  Set the TCP port bound by the ROUTER peer-to-peer socket (beacon mode).
+//  Defaults to * (the port is randomly assigned by the system).
+//  This call overrides this, to bypass some firewall issues when ports are
+//  random. Has no effect after zyre_start().
+void QZyre::setBeaconPeerPort (int portNbr)
+{
+    zyre_set_beacon_peer_port (self, portNbr);
 
 }
 
@@ -206,6 +217,14 @@ void QZyre::gossipConnect (const QString &param)
 void QZyre::gossipConnectCurve (const QString &publicKey, const QString &param)
 {
     zyre_gossip_connect_curve (self, publicKey.toUtf8().data(), "%s", param.toUtf8().data());
+
+}
+
+///
+//  Unpublish a GOSSIP node from local list, useful in removing nodes from list when they EXIT
+void QZyre::gossipUnpublish (const QString &node)
+{
+    zyre_gossip_unpublish (self, node.toUtf8().data());
 
 }
 

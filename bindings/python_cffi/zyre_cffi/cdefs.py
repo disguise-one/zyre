@@ -68,6 +68,7 @@ typedef struct _zsys_t zsys_t;
 typedef struct _ztimerset_t ztimerset_t;
 typedef struct _ztrie_t ztrie_t;
 typedef struct _zuuid_t zuuid_t;
+typedef struct _zhttp_client_t zhttp_client_t;
 // Actors get a pipe and arguments from caller
 typedef void (zactor_fn) (
     zsock_t *pipe, void *args);
@@ -89,9 +90,17 @@ typedef void (zcertstore_loader) (
 typedef void (zcertstore_destructor) (
     void **self_p);
 
+// Destroy an item
+typedef void (zchunk_destructor_fn) (
+    void *hint, byte **item);
+
 //
 typedef int (zconfig_fct) (
     zconfig_t *self, void *arg, int level);
+
+// Destroy an item
+typedef void (zframe_destructor_fn) (
+    void *hint, byte **item);
 
 // Callback function for zhash_freefn method
 typedef void (zhash_free_fn) (
@@ -170,6 +179,10 @@ typedef void (ztimerset_fn) (
 // Callback function for ztrie_node to destroy node data.
 typedef void (ztrie_destroy_data_fn) (
     void **data);
+
+// Callback function for http response.
+typedef void (zhttp_client_fn) (
+    void *arg, int response_code, zchunk_t *data);
 
 // CLASS: zactor
 // Create a new actor passing arbitrary arguments reference.
@@ -498,6 +511,11 @@ void
 zchunk_t *
     zchunk_new (const void *data, size_t size);
 
+// Create a new chunk from memory. Take ownership of the memory and calling the destructor
+// on destroy.
+zchunk_t *
+    zchunk_frommem (byte **data_p, size_t size, zchunk_destructor_fn destructor, void *hint);
+
 // Destroy a chunk
 void
     zchunk_destroy (zchunk_t **self_p);
@@ -588,6 +606,11 @@ bool
 // Transform zchunk into a zframe that can be sent in a message.
 zframe_t *
     zchunk_pack (zchunk_t *self);
+
+// Transform zchunk into a zframe that can be sent in a message.
+// Take ownership of the chunk.
+zframe_t *
+    zchunk_packx (zchunk_t **self_p);
 
 // Transform a zframe into a zchunk.
 zchunk_t *
@@ -1111,6 +1134,11 @@ zframe_t *
 // Create a frame with a specified string content.
 zframe_t *
     zframe_from (const char *string);
+
+// Create a new frame from memory. Take ownership of the memory and calling the destructor
+// on destroy.
+zframe_t *
+    zframe_frommem (byte **data_p, size_t size, zframe_destructor_fn destructor, void *hint);
 
 // Receive frame from socket, returns zframe_t object or NULL if the recv
 // was interrupted. Does a blocking recv, if you want to not block then use
@@ -1742,6 +1770,12 @@ zlistx_t *
 void
     zlistx_destroy (zlistx_t **self_p);
 
+// Unpack binary frame into a new list. Packed data must follow format
+// defined by zlistx_pack. List is set to autofree. An empty frame
+// unpacks to an empty list.
+zlistx_t *
+    zlistx_unpack (zframe_t *frame);
+
 // Add an item to the head of the list. Calls the item duplicator, if any,
 // on the item. Resets cursor to list head. Returns an item handle on
 // success, NULL if memory was exhausted.
@@ -1888,6 +1922,21 @@ void
 // or greater than, item2.
 void
     zlistx_set_comparator (zlistx_t *self, zlistx_comparator_fn comparator);
+
+// Serialize list to a binary frame that can be sent in a message.
+// The packed format is compatible with the 'strings' type implemented by zproto:
+//
+//    ; A list of strings
+//    list            = list-count *longstr
+//    list-count      = number-4
+//
+//    ; Strings are always length + text contents
+//    longstr         = number-4 *VCHAR
+//
+//    ; Numbers are unsigned integers in network byte order
+//    number-4        = 4OCTET
+zframe_t *
+    zlistx_pack (zlistx_t *self);
 
 // Self test of this class.
 void
@@ -2521,6 +2570,7 @@ const char *
 //     c = zchunk_t *
 //     f = zframe_t *
 //     h = zhashx_t *
+//     l = zlistx_t * (DRAFT)
 //     U = zuuid_t *
 //     p = void * (sends the pointer value, only meaningful over inproc)
 //     m = zmsg_t * (sends all frames in the zmsg)
@@ -2554,6 +2604,7 @@ int
 //     f = zframe_t ** (creates zframe)
 //     U = zuuid_t * (creates a zuuid with the data)
 //     h = zhashx_t ** (creates zhashx)
+//     l = zlistx_t ** (creates zlistx) (DRAFT)
 //     p = void ** (stores pointer)
 //     m = zmsg_t ** (creates a zmsg with the remaining frames)
 //     z = null, asserts empty frame (0 arguments)
@@ -2678,6 +2729,60 @@ bool
 // return the supplied value. Takes a polymorphic socket reference.
 void *
     zsock_resolve (void *self);
+
+// Check whether the socket has available message to read.
+bool
+    zsock_has_in (void *self);
+
+// Get socket option `router_notify`.
+// Available from libzmq 4.3.0.
+int
+    zsock_router_notify (void *self);
+
+// Set socket option `router_notify`.
+// Available from libzmq 4.3.0.
+void
+    zsock_set_router_notify (void *self, int router_notify);
+
+// Get socket option `multicast_loop`.
+// Available from libzmq 4.3.0.
+int
+    zsock_multicast_loop (void *self);
+
+// Set socket option `multicast_loop`.
+// Available from libzmq 4.3.0.
+void
+    zsock_set_multicast_loop (void *self, int multicast_loop);
+
+// Get socket option `metadata`.
+// Available from libzmq 4.3.0.
+char *
+    zsock_metadata (void *self);
+
+// Set socket option `metadata`.
+// Available from libzmq 4.3.0.
+void
+    zsock_set_metadata (void *self, const char *metadata);
+
+// Get socket option `loopback_fastpath`.
+// Available from libzmq 4.3.0.
+int
+    zsock_loopback_fastpath (void *self);
+
+// Set socket option `loopback_fastpath`.
+// Available from libzmq 4.3.0.
+void
+    zsock_set_loopback_fastpath (void *self, int loopback_fastpath);
+
+// Get socket option `zap_enforce_domain`.
+// Available from libzmq 4.3.0.
+int
+    zsock_zap_enforce_domain (void *self);
+
+// Set socket option `zap_enforce_domain`.
+// Available from libzmq 4.3.0.
+void
+    zsock_set_zap_enforce_domain (void *self, int zap_enforce_domain);
 
 // Get socket option `gssapi_principal_nametype`.
 // Available from libzmq 4.3.0.
@@ -3699,6 +3804,30 @@ void
 void
     zsys_set_thread_priority (int priority);
 
+// Configure the numeric prefix to each thread created for the internal
+// context's thread pool. This option is only supported on Linux.
+// If the environment variable ZSYS_THREAD_NAME_PREFIX is defined, that
+// provides the default.
+// Note that this method is valid only before any socket is created.
+void
+    zsys_set_thread_name_prefix (int prefix);
+
+// Return thread name prefix.
+int
+    zsys_thread_name_prefix (void);
+
+// Adds a specific CPU to the affinity list of the ZMQ context thread pool.
+// This option is only supported on Linux.
+// Note that this method is valid only before any socket is created.
+void
+    zsys_thread_affinity_cpu_add (int cpu);
+
+// Removes a specific CPU to the affinity list of the ZMQ context thread pool.
+// This option is only supported on Linux.
+// Note that this method is valid only before any socket is created.
+void
+    zsys_thread_affinity_cpu_remove (int cpu);
+
 // Configure the number of sockets that ZeroMQ will allow. The default
 // is 1024. The actual limit depends on the system, and you can query it
 // by using zsys_socket_limit (). A value of zero means "maximum".
@@ -3840,6 +3969,38 @@ void
 // Return use of automatic pre-allocated FDs for zsock instances.
 int
     zsys_auto_use_fd (void);
+
+// Print formatted string. Format is specified by variable names
+// in Python-like format style
+//
+// "%(KEY)s=%(VALUE)s", KEY=key, VALUE=value
+// become
+// "key=value"
+//
+// Returns freshly allocated string or NULL in a case of error.
+// Not enough memory, invalid format specifier, name not in args
+char *
+    zsys_zprintf (const char *format, zhash_t *args);
+
+// Return error string for given format/args combination.
+char *
+    zsys_zprintf_error (const char *format, zhash_t *args);
+
+// Print formatted string. Format is specified by variable names
+// in Python-like format style
+//
+// "%(KEY)s=%(VALUE)s", KEY=key, VALUE=value
+// become
+// "key=value"
+//
+// Returns freshly allocated string or NULL in a case of error.
+// Not enough memory, invalid format specifier, name not in args
+char *
+    zsys_zplprintf (const char *format, zconfig_t *args);
+
+// Return error string for given format/args combination.
+char *
+    zsys_zplprintf_error (const char *format, zconfig_t *args);
 
 // Set log identity, which is a string that prefixes all log messages sent
 // by this process. The log identity defaults to the environment variable
@@ -4050,6 +4211,46 @@ zuuid_t *
 void
     zuuid_test (bool verbose);
 
+// CLASS: zhttp_client
+// Create a new http client
+zhttp_client_t *
+    zhttp_client_new (bool verbose);
+
+// Destroy an http client
+void
+    zhttp_client_destroy (zhttp_client_t **self_p);
+
+// Send a get request to the url, headers is optional.
+//     Use arg to identify response when making multiple requests simultaneously.
+//     Timeout is in milliseconds, use -1 or 0 to wait indefinitely.
+int
+    zhttp_client_get (zhttp_client_t *self, const char *url, zlistx_t *headers, int timeout, zhttp_client_fn handler, void *arg);
+
+// Send a post request to the url, headers is optional.
+// Use arg to identify response when making multiple requests simultaneously.
+// Timeout is in milliseconds, use -1 or 0 to wait indefinitely.
+int
+    zhttp_client_post (zhttp_client_t *self, const char *url, zlistx_t *headers, zchunk_t *body, int timeout, zhttp_client_fn handler, void *arg);
+
+// Invoke callback function for received responses.
+// Should be call after zpoller wait method.
+// Returns 0 if OK, -1 on failure.
+int
+    zhttp_client_execute (zhttp_client_t *self);
+
+// Wait until a response is ready to be consumed.
+// Use when you need a synchronize response.
+//
+// The timeout should be zero or greater, or -1 to wait indefinitely.
+//
+// Returns 0 if a response is ready, -1 and otherwise. errno will be set to EAGAIN if no response is ready.
+int
+    zhttp_client_wait (zhttp_client_t *self, int timeout);
+
+// Self test of this class.
+void
+    zhttp_client_test (bool verbose);
+
 ''')
 
 zyre_cdefs.extend (czmq_cdefs)
@@ -4104,6 +4305,13 @@ void
 // e.g. development vs. production. Has no effect after zyre_start().
 void
     zyre_set_port (zyre_t *self, int port_nbr);
+
+// Set the TCP port bound by the ROUTER peer-to-peer socket (beacon mode).
+// Defaults to * (the port is randomly assigned by the system).
+// This call overrides this, to bypass some firewall issues when ports are
+// random. Has no effect after zyre_start().
+void
+    zyre_set_beacon_peer_port (zyre_t *self, int port_nbr);
 
 // Set the peer evasiveness timeout, in milliseconds. Default is 5000.
 // This can be tuned in order to deal with expected network conditions
@@ -4178,6 +4386,10 @@ void
 // Set-up gossip discovery with CURVE enabled.
 void
     zyre_gossip_connect_curve (zyre_t *self, const char *public_key, const char *format, ...);
+
+// Unpublish a GOSSIP node from local list, useful in removing nodes from list when they EXIT
+void
+    zyre_gossip_unpublish (zyre_t *self, const char *node);
 
 // Start node, after setting header values. When you start a node it
 // begins discovery and connection. Returns 0 if OK, -1 if it wasn't

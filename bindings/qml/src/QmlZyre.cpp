@@ -51,6 +51,15 @@ void QmlZyre::setPort (int portNbr) {
 };
 
 ///
+//  Set the TCP port bound by the ROUTER peer-to-peer socket (beacon mode).
+//  Defaults to * (the port is randomly assigned by the system).
+//  This call overrides this, to bypass some firewall issues when ports are
+//  random. Has no effect after zyre_start().
+void QmlZyre::setBeaconPeerPort (int portNbr) {
+    zyre_set_beacon_peer_port (self, portNbr);
+};
+
+///
 //  Set the peer evasiveness timeout, in milliseconds. Default is 5000.
 //  This can be tuned in order to deal with expected network conditions
 //  and the response time expected by the application. This is tied to
@@ -146,6 +155,12 @@ void QmlZyre::gossipConnect (const QString &format) {
 //  Set-up gossip discovery with CURVE enabled.
 void QmlZyre::gossipConnectCurve (const QString &publicKey, const QString &format) {
     zyre_gossip_connect_curve (self, publicKey.toUtf8().data(), "%s", format.toUtf8().data());
+};
+
+///
+//  Unpublish a GOSSIP node from local list, useful in removing nodes from list when they EXIT
+void QmlZyre::gossipUnpublish (const QString &node) {
+    zyre_gossip_unpublish (self, node.toUtf8().data());
 };
 
 ///

@@ -52,6 +52,12 @@ public slots:
     //  e.g. development vs. production. Has no effect after zyre_start().
     void setPort (int portNbr);
 
+    //  Set the TCP port bound by the ROUTER peer-to-peer socket (beacon mode).
+    //  Defaults to * (the port is randomly assigned by the system).
+    //  This call overrides this, to bypass some firewall issues when ports are
+    //  random. Has no effect after zyre_start().
+    void setBeaconPeerPort (int portNbr);
+
     //  Set the peer evasiveness timeout, in milliseconds. Default is 5000.
     //  This can be tuned in order to deal with expected network conditions
     //  and the response time expected by the application. This is tied to
@@ -113,6 +119,9 @@ public slots:
 
     //  Set-up gossip discovery with CURVE enabled.
     void gossipConnectCurve (const QString &publicKey, const QString &format);
+
+    //  Unpublish a GOSSIP node from local list, useful in removing nodes from list when they EXIT
+    void gossipUnpublish (const QString &node);
 
     //  Start node, after setting header values. When you start a node it
     //  begins discovery and connection. Returns 0 if OK, -1 if it wasn't

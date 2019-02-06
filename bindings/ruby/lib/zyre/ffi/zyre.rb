@@ -167,6 +167,21 @@ module Zyre
         result
       end
 
+      # Set the TCP port bound by the ROUTER peer-to-peer socket (beacon mode).
+      # Defaults to * (the port is randomly assigned by the system).
+      # This call overrides this, to bypass some firewall issues when ports are
+      # random. Has no effect after zyre_start().
+      #
+      # @param port_nbr [Integer, #to_int, #to_i]
+      # @return [void]
+      def set_beacon_peer_port(port_nbr)
+        raise DestroyedError unless @ptr
+        self_p = @ptr
+        port_nbr = Integer(port_nbr)
+        result = ::Zyre::FFI.zyre_set_beacon_peer_port(self_p, port_nbr)
+        result
+      end
+
       # Set the peer evasiveness timeout, in milliseconds. Default is 5000.
       # This can be tuned in order to deal with expected network conditions
       # and the response time expected by the application. This is tied to
@@ -330,6 +345,17 @@ module Zyre
         raise DestroyedError unless @ptr
         self_p = @ptr
         result = ::Zyre::FFI.zyre_gossip_connect_curve(self_p, public_key, format, *args)
+        result
+      end
+
+      # Unpublish a GOSSIP node from local list, useful in removing nodes from list when they EXIT
+      #
+      # @param node [String, #to_s, nil]
+      # @return [void]
+      def gossip_unpublish(node)
+        raise DestroyedError unless @ptr
+        self_p = @ptr
+        result = ::Zyre::FFI.zyre_gossip_unpublish(self_p, node)
         result
       end
 

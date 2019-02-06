@@ -7,7 +7,7 @@
 #ifndef Q_ZFRAME_H
 #define Q_ZFRAME_H
 
-#include "qzyre.h"
+#include "qtzyre.h"
 
 class QT_ZYRE_EXPORT QZframe : public QObject
 {
@@ -27,6 +27,10 @@ public:
 
     //  Create a frame with a specified string content.
     static QZframe* from (const QString &string, QObject *qObjParent = 0);
+
+    //  Create a new frame from memory. Take ownership of the memory and calling the destructor
+    //  on destroy.
+    static QZframe* frommem (byte **dataP, size_t size, zframe_destructor_fn destructor, void *hint, QObject *qObjParent = 0);
 
     //  Receive frame from socket, returns zframe_t object or NULL if the recv
     //  was interrupted. Does a blocking recv, if you want to not block then use

@@ -5,15 +5,20 @@
 ################################################################################
 */
 package org.zeromq.zyre;
+
+import org.scijava.nativelib.NativeLoader;
 import org.zeromq.czmq.*;
 
 public class Zyre implements AutoCloseable{
     static {
-        try {
-            System.loadLibrary ("zyrejni");
-        }
-        catch (Exception e) {
-            System.exit (-1);
+        if (System.getProperty("java.vm.vendor").contains("Android")) {
+            System.loadLibrary("zyrejni");
+        } else {
+            try {
+                NativeLoader.loadLibrary("zyrejni");
+            } catch (Exception e) {
+                System.exit (-1);
+            }
         }
     }
     public long self;
@@ -88,6 +93,16 @@ public class Zyre implements AutoCloseable{
     native static void __setPort (long self, int portNbr);
     public void setPort (int portNbr) {
         __setPort (self, portNbr);
+    }
+    /*
+    Set the TCP port bound by the ROUTER peer-to-peer socket (beacon mode).
+    Defaults to * (the port is randomly assigned by the system).
+    This call overrides this, to bypass some firewall issues when ports are
+    random. Has no effect after zyre_start().
+    */
+    native static void __setBeaconPeerPort (long self, int portNbr);
+    public void setBeaconPeerPort (int portNbr) {
+        __setBeaconPeerPort (self, portNbr);
     }
     /*
     Set the peer evasiveness timeout, in milliseconds. Default is 5000.
@@ -198,6 +213,13 @@ public class Zyre implements AutoCloseable{
     native static void __gossipConnectCurve (long self, String publicKey, String format);
     public void gossipConnectCurve (String publicKey, String format) {
         __gossipConnectCurve (self, publicKey, format);
+    }
+    /*
+    Unpublish a GOSSIP node from local list, useful in removing nodes from list when they EXIT
+    */
+    native static void __gossipUnpublish (long self, String node);
+    public void gossipUnpublish (String node) {
+        __gossipUnpublish (self, node);
     }
     /*
     Start node, after setting header values. When you start a node it
@@ -341,7 +363,7 @@ public class Zyre implements AutoCloseable{
     major * 10000 + minor * 100 + patch, as a single integer.
     */
     native static long __version ();
-    public long version () {
+    public static long version () {
         return __version ();
     }
     /*

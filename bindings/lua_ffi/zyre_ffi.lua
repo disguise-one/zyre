@@ -70,6 +70,13 @@ void
 void
     zyre_set_port (zyre_t *self, int port_nbr);
 
+// Set the TCP port bound by the ROUTER peer-to-peer socket (beacon mode).
+// Defaults to * (the port is randomly assigned by the system).
+// This call overrides this, to bypass some firewall issues when ports are
+// random. Has no effect after zyre_start().
+void
+    zyre_set_beacon_peer_port (zyre_t *self, int port_nbr);
+
 // Set the peer evasiveness timeout, in milliseconds. Default is 5000.
 // This can be tuned in order to deal with expected network conditions
 // and the response time expected by the application. This is tied to
@@ -143,6 +150,10 @@ void
 // Set-up gossip discovery with CURVE enabled.
 void
     zyre_gossip_connect_curve (zyre_t *self, const char *public_key, const char *format, ...);
+
+// Unpublish a GOSSIP node from local list, useful in removing nodes from list when they EXIT
+void
+    zyre_gossip_unpublish (zyre_t *self, const char *node);
 
 // Start node, after setting header values. When you start a node it
 // begins discovery and connection. Returns 0 if OK, -1 if it wasn't

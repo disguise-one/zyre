@@ -5,7 +5,7 @@
 ################################################################################
 */
 
-#include "qzyre.h"
+#include "qtzyre.h"
 
 ///
 //  Copy-construct to return the proper wrapped c types
@@ -263,6 +263,7 @@ const QString QZsock::typeStr ()
 //      c = zchunk_t *
 //      f = zframe_t *
 //      h = zhashx_t *
+//      l = zlistx_t * (DRAFT)
 //      U = zuuid_t *
 //      p = void * (sends the pointer value, only meaningful over inproc)
 //      m = zmsg_t * (sends all frames in the zmsg)
@@ -307,6 +308,7 @@ int QZsock::vsend (const QString &picture, va_list argptr)
 //      f = zframe_t ** (creates zframe)
 //      U = zuuid_t * (creates a zuuid with the data)
 //      h = zhashx_t ** (creates zhashx)
+//      l = zlistx_t ** (creates zlistx) (DRAFT)
 //      p = void ** (stores pointer)
 //      m = zmsg_t ** (creates a zmsg with the remaining frames)
 //      z = null, asserts empty frame (0 arguments)
@@ -436,6 +438,106 @@ void * QZsock::resolve (void *self)
 {
     void * rv = zsock_resolve (self);
     return rv;
+}
+
+///
+//  Check whether the socket has available message to read.
+bool QZsock::hasIn ()
+{
+    bool rv = zsock_has_in (self);
+    return rv;
+}
+
+///
+//  Get socket option `router_notify`.
+//  Available from libzmq 4.3.0.
+int QZsock::routerNotify ()
+{
+    int rv = zsock_router_notify (self);
+    return rv;
+}
+
+///
+//  Set socket option `router_notify`.
+//  Available from libzmq 4.3.0.
+void QZsock::setRouterNotify (int routerNotify)
+{
+    zsock_set_router_notify (self, routerNotify);
+
+}
+
+///
+//  Get socket option `multicast_loop`.
+//  Available from libzmq 4.3.0.
+int QZsock::multicastLoop ()
+{
+    int rv = zsock_multicast_loop (self);
+    return rv;
+}
+
+///
+//  Set socket option `multicast_loop`.
+//  Available from libzmq 4.3.0.
+void QZsock::setMulticastLoop (int multicastLoop)
+{
+    zsock_set_multicast_loop (self, multicastLoop);
+
+}
+
+///
+//  Get socket option `metadata`.
+//  Available from libzmq 4.3.0.
+QString QZsock::metadata ()
+{
+    char *retStr_ = zsock_metadata (self);
+    QString rv = QString (retStr_);
+    zstr_free (&retStr_);
+    return rv;
+}
+
+///
+//  Set socket option `metadata`.
+//  Available from libzmq 4.3.0.
+void QZsock::setMetadata (const QString &metadata)
+{
+    zsock_set_metadata (self, metadata.toUtf8().data());
+
+}
+
+///
+//  Get socket option `loopback_fastpath`.
+//  Available from libzmq 4.3.0.
+int QZsock::loopbackFastpath ()
+{
+    int rv = zsock_loopback_fastpath (self);
+    return rv;
+}
+
+///
+//  Set socket option `loopback_fastpath`.
+//  Available from libzmq 4.3.0.
+void QZsock::setLoopbackFastpath (int loopbackFastpath)
+{
+    zsock_set_loopback_fastpath (self, loopbackFastpath);
+
+}
+
+///
+//  Get socket option `zap_enforce_domain`.
+//  Available from libzmq 4.3.0.
+int QZsock::zapEnforceDomain ()
+{
+    int rv = zsock_zap_enforce_domain (self);
+    return rv;
+}
+
+///
+//  Set socket option `zap_enforce_domain`.
+//  Available from libzmq 4.3.0.
+void QZsock::setZapEnforceDomain (int zapEnforceDomain)
+{
+    zsock_set_zap_enforce_domain (self, zapEnforceDomain);
+
 }
 
 ///

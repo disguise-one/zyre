@@ -48,6 +48,7 @@ class Zyre: public Nan::ObjectWrap {
     static NAN_METHOD (_set_header);
     static NAN_METHOD (_set_verbose);
     static NAN_METHOD (_set_port);
+    static NAN_METHOD (_set_beacon_peer_port);
     static NAN_METHOD (_set_evasive_timeout);
     static NAN_METHOD (_set_expired_timeout);
     static NAN_METHOD (_set_interval);
@@ -60,6 +61,7 @@ class Zyre: public Nan::ObjectWrap {
     static NAN_METHOD (_gossip_bind);
     static NAN_METHOD (_gossip_connect);
     static NAN_METHOD (_gossip_connect_curve);
+    static NAN_METHOD (_gossip_unpublish);
     static NAN_METHOD (_start);
     static NAN_METHOD (_stop);
     static NAN_METHOD (_join);

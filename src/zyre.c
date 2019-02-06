@@ -206,6 +206,20 @@ zyre_set_port (zyre_t *self, int port_nbr)
 
 
 //  --------------------------------------------------------------------------
+//  Set TCP ephemeral port for beacon; defaults to 0, and the port is random.
+//  This call overrides this to bypass some firewall issues with random ports.
+//  Has no effect after zyre_start().
+
+void
+zyre_set_beacon_peer_port (zyre_t *self, int port)
+{
+    assert (self);
+    zstr_sendm (self->actor, "SET EPHEMERAL PORT");
+    zstr_sendf (self->actor, "%d", port);
+}
+
+
+//  --------------------------------------------------------------------------
 //  Set the node evasiveness timeout, in milliseconds. Default is 5000.
 //  This can be tuned in order to deal with expected network conditions
 //  and the response time expected by the application. This is tied to
@@ -300,6 +314,7 @@ zyre_set_contest_in_group (zyre_t *self, const char *group) {
 }
 
 #ifdef ZYRE_BUILD_DRAFT_API
+//  DRAFT-API: Public IP
 void
 zyre_set_advertised_endpoint (zyre_t *self, const char *endpoint)
 {
@@ -397,6 +412,19 @@ zyre_gossip_connect_curve (zyre_t *self, const char *public_key, const char *for
 
     zstr_sendx (self->actor, "GOSSIP CONNECT", string, public_key, NULL);
     free (string);
+}
+
+//  --------------------------------------------------------------------------
+//  Inform gossip to remove a node from it's master (tuples) list
+//  Useful when tracking nodes activity across the mesh
+
+void
+zyre_gossip_unpublish (zyre_t *self, const char *node)
+{
+    assert (self);
+    assert (node);
+
+    zstr_sendx (self->actor, "GOSSIP UNPUBLISH", node, NULL);
 }
 
 
@@ -849,6 +877,7 @@ zyre_test (bool verbose)
     printf ("OK\n");
 
 #ifdef ZYRE_BUILD_DRAFT_API
+    //  DRAFT-API: Security
     if (zsys_has_curve()){
 
         printf (" * zyre-curve: ");

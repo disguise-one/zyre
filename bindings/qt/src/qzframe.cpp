@@ -5,7 +5,7 @@
 ################################################################################
 */
 
-#include "qzyre.h"
+#include "qtzyre.h"
 
 ///
 //  Copy-construct to return the proper wrapped c types
@@ -36,6 +36,14 @@ QZframe* QZframe::newEmpty (QObject *qObjParent)
 QZframe* QZframe::from (const QString &string, QObject *qObjParent)
 {
     return new QZframe (zframe_from (string.toUtf8().data()), qObjParent);
+}
+
+///
+//  Create a new frame from memory. Take ownership of the memory and calling the destructor
+//  on destroy.
+QZframe* QZframe::frommem (byte **dataP, size_t size, zframe_destructor_fn destructor, void *hint, QObject *qObjParent)
+{
+    return new QZframe (zframe_frommem (dataP, size, destructor, hint), qObjParent);
 }
 
 ///

@@ -69,6 +69,15 @@ class Zyre(object):
         """
         utils.lib.zyre_set_port(self._p, port_nbr)
 
+    def set_beacon_peer_port(self, port_nbr):
+        """
+        Set the TCP port bound by the ROUTER peer-to-peer socket (beacon mode).
+        Defaults to * (the port is randomly assigned by the system).
+        This call overrides this, to bypass some firewall issues when ports are
+        random. Has no effect after zyre_start().
+        """
+        utils.lib.zyre_set_beacon_peer_port(self._p, port_nbr)
+
     def set_evasive_timeout(self, interval):
         """
         Set the peer evasiveness timeout, in milliseconds. Default is 5000.
@@ -166,6 +175,12 @@ class Zyre(object):
         Set-up gossip discovery with CURVE enabled.
         """
         utils.lib.zyre_gossip_connect_curve(self._p, utils.to_bytes(public_key), format, )
+
+    def gossip_unpublish(self, node):
+        """
+        Unpublish a GOSSIP node from local list, useful in removing nodes from list when they EXIT
+        """
+        utils.lib.zyre_gossip_unpublish(self._p, utils.to_bytes(node))
 
     def start(self):
         """

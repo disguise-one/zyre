@@ -60,6 +60,14 @@
         <argument name = "port nbr" type = "integer" />
     </method>
 
+    <method name = "set beacon peer port" state = "draft">
+        Set the TCP port bound by the ROUTER peer-to-peer socket (beacon mode).
+        Defaults to * (the port is randomly assigned by the system).
+        This call overrides this, to bypass some firewall issues when ports are
+        random. Has no effect after zyre_start().
+        <argument name = "port nbr" type = "integer" />
+    </method>
+
     <method name = "set evasive timeout">
         Set the peer evasiveness timeout, in milliseconds. Default is 5000.
         This can be tuned in order to deal with expected network conditions
@@ -146,6 +154,11 @@
         Set-up gossip discovery with CURVE enabled.
         <argument name = "public_key" type = "string" />
         <argument name = "format" type = "format" />
+    </method>
+
+    <method name = "gossip unpublish" state = "draft">
+        Unpublish a GOSSIP node from local list, useful in removing nodes from list when they EXIT
+        <argument name = "node" type = "string" />
     </method>
 
     <method name = "start">

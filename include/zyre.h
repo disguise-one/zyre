@@ -217,6 +217,14 @@ ZYRE_EXPORT void
 
 #ifdef ZYRE_BUILD_DRAFT_API
 //  *** Draft method, for development use, may change without warning ***
+//  Set the TCP port bound by the ROUTER peer-to-peer socket (beacon mode).
+//  Defaults to * (the port is randomly assigned by the system).
+//  This call overrides this, to bypass some firewall issues when ports are
+//  random. Has no effect after zyre_start().
+ZYRE_EXPORT void
+    zyre_set_beacon_peer_port (zyre_t *self, int port_nbr);
+
+//  *** Draft method, for development use, may change without warning ***
 //  This options enables a peer to actively contest for leadership in the
 //  given group. If this option is not set the peer will still participate in
 //  elections but never gets elected. This ensures that a consent for a leader
@@ -245,6 +253,11 @@ ZYRE_EXPORT void
 //  Set-up gossip discovery with CURVE enabled.
 ZYRE_EXPORT void
     zyre_gossip_connect_curve (zyre_t *self, const char *public_key, const char *format, ...) CHECK_PRINTF (3);
+
+//  *** Draft method, for development use, may change without warning ***
+//  Unpublish a GOSSIP node from local list, useful in removing nodes from list when they EXIT
+ZYRE_EXPORT void
+    zyre_gossip_unpublish (zyre_t *self, const char *node);
 
 //  *** Draft method, for development use, may change without warning ***
 //  Explicitly connect to a peer
