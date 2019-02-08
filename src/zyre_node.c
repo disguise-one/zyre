@@ -1048,7 +1048,7 @@ zyre_node_actor (zsock_t *pipe, void *args)
                     self->port = zsock_bind(self->inbox, "tcp://%s%%%s:*", zsys_ipv6_address (),
                         iface);
                 } else
-                    self->port = zsock_bind(self->inbox, "tcp://%s:*", hostname);
+                    self->port = zsock_bind(self->inbox, "tcp://*:*");
 
                 if (self->port > 0) {
                     assert(!self->endpoint);   //  If caller set this, we'd be using gossip
