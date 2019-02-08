@@ -554,6 +554,72 @@ zyre_node_purge_peer (const char *key, void *item, void *argument)
     return 0;
 }
 
+// Find local ip address for remote peer to connect back on
+// Returns false if no remote endpoint could be found
+
+static bool
+zyre_node_find_local_endpoint (zyre_node_t *self, const char *remote_endpoint, char *local_endpoint)
+{
+    assert(self);
+    assert(remote_endpoint);
+
+    bool found = false;
+
+    // Extract the ip address from the endpoint
+    zrex_t *iprex = zrex_new ("tcp://(\\d+\\.\\d+\\.\\d+\\.\\d+):\\d+");
+        
+    assert (iprex);
+    assert (zrex_valid (iprex));
+
+    if (zrex_matches (iprex, remote_endpoint) && zrex_hits (iprex) == 2) {
+#if defined (__WINDOWS__)
+        DWORD rc;
+
+        IPAddr ipaddr;
+        rc = inet_pton (AF_INET, zrex_hit (iprex, 1), &ipaddr);
+        assert(rc == 1);
+
+        DWORD if_index;
+        rc = GetBestInterface (ipaddr, &if_index);
+        assert(rc == NO_ERROR);
+
+        ULONG mib_ipaddrtable_size = 1024;
+        PMIB_IPADDRTABLE mib_ipaddrtable = (PMIB_IPADDRTABLE) zmalloc (mib_ipaddrtable_size);
+
+        rc = GetIpAddrTable (mib_ipaddrtable, &mib_ipaddrtable_size, FALSE);
+        if (rc == ERROR_INSUFFICIENT_BUFFER) {
+            free (mib_ipaddrtable);
+            mib_ipaddrtable = (PMIB_IPADDRTABLE) zmalloc (mib_ipaddrtable_size);
+            rc = GetIpAddrTable (mib_ipaddrtable, &mib_ipaddrtable_size, FALSE);
+        }
+        assert(rc == NO_ERROR);
+
+        for (DWORD i = 0; i < mib_ipaddrtable->dwNumEntries; ++i)
+        {
+            if (mib_ipaddrtable->table[i].dwIndex == if_index)
+            {
+                char local_ip [INET_ADDRSTRLEN];
+                IN_ADDR in_addr;
+                in_addr.S_un.S_addr = (u_long) mib_ipaddrtable->table[i].dwAddr;
+                PCSTR pch = inet_ntop (AF_INET, &in_addr, local_ip, INET_ADDRSTRLEN);
+                assert(pch);
+                sprintf (local_endpoint, "tcp://%s:%d", local_ip, self->port);
+                found = true;
+                break;
+            }
+        }
+
+        free (mib_ipaddrtable);
+    }
+
+    zrex_destroy (&iprex);
+#else
+    error "not implemented";
+#endif
+
+    return found;
+}
+
 //  Find or create peer via its UUID
 
 static zyre_peer_t *
@@ -588,7 +654,24 @@ zyre_node_require_peer (zyre_node_t *self, zuuid_t *uuid, const char *endpoint)
         zhash_t *headers = zhash_dup (self->headers);
         zre_msg_t *msg = zre_msg_new ();
         zre_msg_set_id (msg, ZRE_MSG_HELLO);
-        zre_msg_set_endpoint (msg, self->endpoint);
+
+        // Find a local interface with a route to this peer to advertise as the return connect endpoint
+        if (self->endpoint) { // using gossip
+            zre_msg_set_endpoint (msg, self->endpoint);
+        } else
+        {
+            char local_endpoint [100];
+            if (!zyre_node_find_local_endpoint (self, endpoint, local_endpoint)) {
+                // cannot find a local endpoint
+                // remote endpoint is ipv6
+                // or an older zyre node sent us a hostname
+                char *hostname = zsys_hostname ();
+                sprintf (local_endpoint, "tcp://%s:%d", hostname, self->port);
+                zstr_free (&hostname);
+            }
+            zre_msg_set_endpoint (msg, local_endpoint);
+        }     
+
         zre_msg_set_groups (msg, &groups);
         zre_msg_set_status (msg, self->status);
         zre_msg_set_name (msg, self->name);
@@ -722,8 +805,8 @@ zyre_node_recv_peer (zyre_node_t *self)
                 assert (!(zyre_peer_t *) zhash_lookup (self->peers, zuuid_str (uuid)));
             }
             else
-            if (streq (zyre_peer_endpoint (peer), self->endpoint)) {
-                //  We ignore HELLO, if peer has same endpoint as current node
+            if (streq (zuuid_str(uuid), zuuid_str(self->uuid))) {
+                //  We ignore HELLO, if peer has same uuid as current node
                 zre_msg_destroy (&msg);
                 zuuid_destroy (&uuid);
                 return;
@@ -760,7 +843,7 @@ zyre_node_recv_peer (zyre_node_t *self)
             zframe_t *headers = zhash_pack (zyre_peer_headers (peer));
             zframe_send (&headers, self->outbox, ZFRAME_MORE);
         }
-        zstr_send (self->outbox, zre_msg_endpoint (msg));
+        zstr_send (self->outbox, zyre_peer_endpoint (peer));
 
         if (self->verbose)
             zsys_info ("(%s) ENTER name=%s endpoint=%s",
@@ -969,14 +1052,6 @@ zyre_node_actor (zsock_t *pipe, void *args)
 
                 if (self->port > 0) {
                     assert(!self->endpoint);   //  If caller set this, we'd be using gossip
-                    if (streq(zsys_interface(), "*")) {
-                        char *hostname = zsys_hostname();
-                        self->endpoint = zsys_sprintf("tcp://%s:%d", hostname, self->port);
-                        zstr_free(&hostname);
-                    }
-                    else {
-                        self->endpoint = strdup(zsock_endpoint(self->inbox));
-                    }
 
                     //  Set broadcast/listen beacon
                     beacon_t beacon;
