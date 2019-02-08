@@ -583,6 +583,13 @@ zyre_node_find_local_endpoint (zyre_node_t *self, const char *remote_endpoint, c
         rc = GetBestInterface (ipaddr, &if_index);
         assert(rc == NO_ERROR);
 
+        if (rc != NO_ERROR) {
+            zsys_debug ("(%s) failed to find best interface remote_enpoint='%s' err=%lu", 
+                self->name, remote_endpoint, rc);
+            zrex_destroy (&iprex);
+            return false;
+        }
+
         ULONG mib_ipaddrtable_size = 1024;
         PMIB_IPADDRTABLE mib_ipaddrtable = (PMIB_IPADDRTABLE) zmalloc (mib_ipaddrtable_size);
 
