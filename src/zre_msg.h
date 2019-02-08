@@ -29,8 +29,9 @@
 /*  These are the zre_msg messages:
 
     HELLO - Greet a peer so it can connect back to us
-        version             number 1    Version number (2)
+        version             number 1    Version number (3)
         sequence            number 2    Cyclic sequence number
+        ack                 number 2    Acknowledged sequence number
         endpoint            string      Sender connect endpoint
         groups              strings     List of groups sender is in
         status              number 1    Sender groups status value
@@ -38,35 +39,48 @@
         headers             hash        Sender header properties
 
     WHISPER - Send a multi-part message to a peer
-        version             number 1    Version number (2)
+        version             number 1    Version number (3)
         sequence            number 2    Cyclic sequence number
+        ack                 number 2    Acknowledged sequence number
         content             msg         Wrapped message content
 
     SHOUT - Send a multi-part message to a group
-        version             number 1    Version number (2)
+        version             number 1    Version number (3)
         sequence            number 2    Cyclic sequence number
+        ack                 number 2    Acknowledged sequence number
         group               string      Group to send to
         content             msg         Wrapped message content
 
     JOIN - Join a group
-        version             number 1    Version number (2)
+        version             number 1    Version number (3)
         sequence            number 2    Cyclic sequence number
+        ack                 number 2    Acknowledged sequence number
         group               string      Name of group
         status              number 1    Sender groups status value
 
     LEAVE - Leave a group
-        version             number 1    Version number (2)
+        version             number 1    Version number (3)
         sequence            number 2    Cyclic sequence number
+        ack                 number 2    Acknowledged sequence number
         group               string      Name of group
         status              number 1    Sender groups status value
 
     PING - Ping a peer that has gone silent
-        version             number 1    Version number (2)
+        version             number 1    Version number (3)
         sequence            number 2    Cyclic sequence number
+        ack                 number 2    Acknowledged sequence number
 
     PING_OK - Reply to a peer's ping
-        version             number 1    Version number (2)
+        version             number 1    Version number (3)
         sequence            number 2    Cyclic sequence number
+        ack                 number 2    Acknowledged sequence number
+
+    RESEND - Resend request for a range of sequence numbers
+        version             number 1    Version number (3)
+        sequence            number 2    Cyclic sequence number
+        ack                 number 2    Acknowledged sequence number
+        start               number 2    Sequence number range start
+        end                 number 2    Sequence number range end (exclusive)
 */
 
 
@@ -77,6 +91,7 @@
 #define ZRE_MSG_LEAVE                       5
 #define ZRE_MSG_PING                        6
 #define ZRE_MSG_PING_OK                     7
+#define ZRE_MSG_RESEND                      8
 
 #include <czmq.h>
 
@@ -138,6 +153,12 @@ ZYRE_EXPORT uint16_t
 ZYRE_EXPORT void
     zre_msg_set_sequence (zre_msg_t *self, uint16_t sequence);
 
+//  Get/set the ack field
+ZYRE_EXPORT uint16_t
+    zre_msg_ack (zre_msg_t *self);
+ZYRE_EXPORT void
+    zre_msg_set_ack (zre_msg_t *self, uint16_t ack);
+
 //  Get/set the endpoint field
 ZYRE_EXPORT const char *
     zre_msg_endpoint (zre_msg_t *self);
@@ -191,6 +212,18 @@ ZYRE_EXPORT const char *
     zre_msg_group (zre_msg_t *self);
 ZYRE_EXPORT void
     zre_msg_set_group (zre_msg_t *self, const char *value);
+
+//  Get/set the start field
+ZYRE_EXPORT uint16_t
+    zre_msg_start (zre_msg_t *self);
+ZYRE_EXPORT void
+    zre_msg_set_start (zre_msg_t *self, uint16_t start);
+
+//  Get/set the end field
+ZYRE_EXPORT uint16_t
+    zre_msg_end (zre_msg_t *self);
+ZYRE_EXPORT void
+    zre_msg_set_end (zre_msg_t *self, uint16_t end);
 
 //  Self test of this class
 ZYRE_EXPORT void

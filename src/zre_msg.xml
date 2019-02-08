@@ -6,20 +6,21 @@
     project_header = "../include/zyre.h"
     export_macro = "ZYRE_EXPORT"
     >
-    This is the ZRE protocol, version 2 draft, as defined by rfc.zeromq.org/spec:36/ZRE.
+    This is the ZRE protocol, version 3 draft, as defined by rfc.zeromq.org/spec:36/ZRE.
 
     <include filename = "../license.xml" />
 
     <grammar>
     zre             = greeting *traffic
     greeting        = hello
-    traffic         = whisper / shout / join / leave / ping / ping-ok
+    traffic         = whisper / shout / join / leave / ping / ping-ok / resend
     </grammar>
 
     <!-- Header for all messages -->
     <header>
-        <field name = "version" type = "number" size = "1" value = "2">Version number (2)</field>
+        <field name = "version" type = "number" size = "1" value = "3">Version number (3)</field>
         <field name = "sequence" type = "number" size = "2">Cyclic sequence number</field>
+        <field name = "ack" type = "number" size = "2">Acknowledged sequence number</field>
     </header>
 
     <message name = "HELLO" id = "1">
@@ -61,5 +62,11 @@
 
     <message name = "PING-OK" id = "7">
     Reply to a peer's ping
+    </message>
+
+    <message name = "RESEND" id = "8">
+        <field name = "start" type = "number" size = "2">Sequence number range start</field>
+        <field name = "end" type = "number" size = "2">Sequence number range end (exclusive)</field>
+    Resend request for a range of sequence numbers
     </message>
 </class>

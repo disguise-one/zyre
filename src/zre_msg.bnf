@@ -2,14 +2,15 @@ The following ABNF grammar defines the work with ZRE messages:
 
     zre             = greeting *traffic
     greeting        = hello
-    traffic         = whisper / shout / join / leave / ping / ping-ok
+    traffic         = whisper / shout / join / leave / ping / ping-ok / resend
 
     ;  Greet a peer so it can connect back to us                             
 
-    HELLO           = signature %d1 version sequence endpoint groups status name headers
+    HELLO           = signature %d1 version sequence ack endpoint groups status name headers
     signature       = %xAA %xA1             ; two octets
-    version         = number-1              ; Version number (2)
+    version         = number-1              ; Version number (3)
     sequence        = number-2              ; Cyclic sequence number
+    ack             = number-2              ; Acknowledged sequence number
     endpoint        = string                ; Sender connect endpoint
     groups          = strings               ; List of groups sender is in
     status          = number-1              ; Sender groups status value
@@ -18,46 +19,61 @@ The following ABNF grammar defines the work with ZRE messages:
 
     ;  Send a multi-part message to a peer                                   
 
-    WHISPER         = signature %d2 version sequence content
-    version         = number-1              ; Version number (2)
+    WHISPER         = signature %d2 version sequence ack content
+    version         = number-1              ; Version number (3)
     sequence        = number-2              ; Cyclic sequence number
+    ack             = number-2              ; Acknowledged sequence number
     content         = msg                   ; Wrapped message content
 
     ;  Send a multi-part message to a group                                  
 
-    SHOUT           = signature %d3 version sequence group content
-    version         = number-1              ; Version number (2)
+    SHOUT           = signature %d3 version sequence ack group content
+    version         = number-1              ; Version number (3)
     sequence        = number-2              ; Cyclic sequence number
+    ack             = number-2              ; Acknowledged sequence number
     group           = string                ; Group to send to
     content         = msg                   ; Wrapped message content
 
     ;  Join a group                                                          
 
-    JOIN            = signature %d4 version sequence group status
-    version         = number-1              ; Version number (2)
+    JOIN            = signature %d4 version sequence ack group status
+    version         = number-1              ; Version number (3)
     sequence        = number-2              ; Cyclic sequence number
+    ack             = number-2              ; Acknowledged sequence number
     group           = string                ; Name of group
     status          = number-1              ; Sender groups status value
 
     ;  Leave a group                                                         
 
-    LEAVE           = signature %d5 version sequence group status
-    version         = number-1              ; Version number (2)
+    LEAVE           = signature %d5 version sequence ack group status
+    version         = number-1              ; Version number (3)
     sequence        = number-2              ; Cyclic sequence number
+    ack             = number-2              ; Acknowledged sequence number
     group           = string                ; Name of group
     status          = number-1              ; Sender groups status value
 
     ;  Ping a peer that has gone silent                                      
 
-    PING            = signature %d6 version sequence
-    version         = number-1              ; Version number (2)
+    PING            = signature %d6 version sequence ack
+    version         = number-1              ; Version number (3)
     sequence        = number-2              ; Cyclic sequence number
+    ack             = number-2              ; Acknowledged sequence number
 
     ;  Reply to a peer's ping                                                
 
-    PING-OK         = signature %d7 version sequence
-    version         = number-1              ; Version number (2)
+    PING-OK         = signature %d7 version sequence ack
+    version         = number-1              ; Version number (3)
     sequence        = number-2              ; Cyclic sequence number
+    ack             = number-2              ; Acknowledged sequence number
+
+    ;  Resend request for a range of sequence numbers                        
+
+    RESEND          = signature %d8 version sequence ack start end
+    version         = number-1              ; Version number (3)
+    sequence        = number-2              ; Cyclic sequence number
+    ack             = number-2              ; Acknowledged sequence number
+    start           = number-2              ; Sequence number range start
+    end             = number-2              ; Sequence number range end (exclusive)
 
     ; A list of string values
     strings         = strings-count *strings-value

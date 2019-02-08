@@ -45,6 +45,7 @@ struct _zre_msg_t {
     byte *needle;                       //  Read/write pointer for serialization
     byte *ceiling;                      //  Valid upper limit for read pointer
     uint16_t sequence;                  //  Cyclic sequence number
+    uint16_t ack;                       //  Acknowledged sequence number
     char endpoint [256];                //  Sender connect endpoint
     zlist_t *groups;                    //  List of groups sender is in
     byte status;                        //  Sender groups status value
@@ -53,6 +54,8 @@ struct _zre_msg_t {
     size_t headers_bytes;               //  Size of hash content
     zmsg_t *content;                    //  Wrapped message content
     char group [256];                   //  Group to send to
+    uint16_t start;                     //  Sequence number range start
+    uint16_t end;                       //  Sequence number range end (exclusive)
 };
 
 //  --------------------------------------------------------------------------
@@ -255,6 +258,7 @@ zre_msg_dup (zre_msg_t *other)
 
     // Copy the rest of the fields
     zre_msg_set_sequence (copy, zre_msg_sequence (other));
+    zre_msg_set_ack (copy, zre_msg_ack (other));
     zre_msg_set_endpoint (copy, zre_msg_endpoint (other));
     {
         zlist_t *lcopy = zlist_dup (zre_msg_groups (other));
@@ -262,11 +266,17 @@ zre_msg_dup (zre_msg_t *other)
     }
     zre_msg_set_status (copy, zre_msg_status (other));
     zre_msg_set_name (copy, zre_msg_name (other));
-    zhash_t *dup_hash = zhash_dup (zre_msg_headers (other));
-    zre_msg_set_headers (copy, &dup_hash);
-    zmsg_t *dup_msg = zmsg_dup (zre_msg_content (other));
-    zre_msg_set_content (copy, &dup_msg);
+    {
+        zhash_t *dup_hash = zhash_dup (zre_msg_headers (other));
+        zre_msg_set_headers (copy, &dup_hash);
+    }
+    {
+        zmsg_t *dup_msg = zmsg_dup (zre_msg_content (other));
+        zre_msg_set_content (copy, &dup_msg);
+    }
     zre_msg_set_group (copy, zre_msg_group (other));
+    zre_msg_set_start (copy, zre_msg_start (other));
+    zre_msg_set_end (copy, zre_msg_end (other));
 
     return copy;
 }
@@ -319,13 +329,14 @@ zre_msg_recv (zre_msg_t *self, zsock_t *input)
             {
                 byte version;
                 GET_NUMBER1 (version);
-                if (version != 2) {
+                if (version != 3) {
                     zsys_warning ("zre_msg: version is invalid");
                     rc = -2;    //  Malformed
                     goto malformed;
                 }
             }
             GET_NUMBER2 (self->sequence);
+            GET_NUMBER2 (self->ack);
             GET_STRING (self->endpoint);
             {
                 size_t list_size;
@@ -363,13 +374,14 @@ zre_msg_recv (zre_msg_t *self, zsock_t *input)
             {
                 byte version;
                 GET_NUMBER1 (version);
-                if (version != 2) {
+                if (version != 3) {
                     zsys_warning ("zre_msg: version is invalid");
                     rc = -2;    //  Malformed
                     goto malformed;
                 }
             }
             GET_NUMBER2 (self->sequence);
+            GET_NUMBER2 (self->ack);
             //  Get zero or more remaining frames
             zmsg_destroy (&self->content);
             if (zsock_rcvmore (input))
@@ -382,13 +394,14 @@ zre_msg_recv (zre_msg_t *self, zsock_t *input)
             {
                 byte version;
                 GET_NUMBER1 (version);
-                if (version != 2) {
+                if (version != 3) {
                     zsys_warning ("zre_msg: version is invalid");
                     rc = -2;    //  Malformed
                     goto malformed;
                 }
             }
             GET_NUMBER2 (self->sequence);
+            GET_NUMBER2 (self->ack);
             GET_STRING (self->group);
             //  Get zero or more remaining frames
             zmsg_destroy (&self->content);
@@ -402,13 +415,14 @@ zre_msg_recv (zre_msg_t *self, zsock_t *input)
             {
                 byte version;
                 GET_NUMBER1 (version);
-                if (version != 2) {
+                if (version != 3) {
                     zsys_warning ("zre_msg: version is invalid");
                     rc = -2;    //  Malformed
                     goto malformed;
                 }
             }
             GET_NUMBER2 (self->sequence);
+            GET_NUMBER2 (self->ack);
             GET_STRING (self->group);
             GET_NUMBER1 (self->status);
             break;
@@ -417,13 +431,14 @@ zre_msg_recv (zre_msg_t *self, zsock_t *input)
             {
                 byte version;
                 GET_NUMBER1 (version);
-                if (version != 2) {
+                if (version != 3) {
                     zsys_warning ("zre_msg: version is invalid");
                     rc = -2;    //  Malformed
                     goto malformed;
                 }
             }
             GET_NUMBER2 (self->sequence);
+            GET_NUMBER2 (self->ack);
             GET_STRING (self->group);
             GET_NUMBER1 (self->status);
             break;
@@ -432,26 +447,44 @@ zre_msg_recv (zre_msg_t *self, zsock_t *input)
             {
                 byte version;
                 GET_NUMBER1 (version);
-                if (version != 2) {
+                if (version != 3) {
                     zsys_warning ("zre_msg: version is invalid");
                     rc = -2;    //  Malformed
                     goto malformed;
                 }
             }
             GET_NUMBER2 (self->sequence);
+            GET_NUMBER2 (self->ack);
             break;
 
         case ZRE_MSG_PING_OK:
             {
                 byte version;
                 GET_NUMBER1 (version);
-                if (version != 2) {
+                if (version != 3) {
                     zsys_warning ("zre_msg: version is invalid");
                     rc = -2;    //  Malformed
                     goto malformed;
                 }
             }
             GET_NUMBER2 (self->sequence);
+            GET_NUMBER2 (self->ack);
+            break;
+
+        case ZRE_MSG_RESEND:
+            {
+                byte version;
+                GET_NUMBER1 (version);
+                if (version != 3) {
+                    zsys_warning ("zre_msg: version is invalid");
+                    rc = -2;    //  Malformed
+                    goto malformed;
+                }
+            }
+            GET_NUMBER2 (self->sequence);
+            GET_NUMBER2 (self->ack);
+            GET_NUMBER2 (self->start);
+            GET_NUMBER2 (self->end);
             break;
 
         default:
@@ -488,6 +521,7 @@ zre_msg_send (zre_msg_t *self, zsock_t *output)
         case ZRE_MSG_HELLO:
             frame_size += 1;            //  version
             frame_size += 2;            //  sequence
+            frame_size += 2;            //  ack
             frame_size += 1 + strlen (self->endpoint);
             frame_size += 4;            //  Size is 4 octets
             if (self->groups) {
@@ -514,31 +548,44 @@ zre_msg_send (zre_msg_t *self, zsock_t *output)
         case ZRE_MSG_WHISPER:
             frame_size += 1;            //  version
             frame_size += 2;            //  sequence
+            frame_size += 2;            //  ack
             break;
         case ZRE_MSG_SHOUT:
             frame_size += 1;            //  version
             frame_size += 2;            //  sequence
+            frame_size += 2;            //  ack
             frame_size += 1 + strlen (self->group);
             break;
         case ZRE_MSG_JOIN:
             frame_size += 1;            //  version
             frame_size += 2;            //  sequence
+            frame_size += 2;            //  ack
             frame_size += 1 + strlen (self->group);
             frame_size += 1;            //  status
             break;
         case ZRE_MSG_LEAVE:
             frame_size += 1;            //  version
             frame_size += 2;            //  sequence
+            frame_size += 2;            //  ack
             frame_size += 1 + strlen (self->group);
             frame_size += 1;            //  status
             break;
         case ZRE_MSG_PING:
             frame_size += 1;            //  version
             frame_size += 2;            //  sequence
+            frame_size += 2;            //  ack
             break;
         case ZRE_MSG_PING_OK:
             frame_size += 1;            //  version
             frame_size += 2;            //  sequence
+            frame_size += 2;            //  ack
+            break;
+        case ZRE_MSG_RESEND:
+            frame_size += 1;            //  version
+            frame_size += 2;            //  sequence
+            frame_size += 2;            //  ack
+            frame_size += 2;            //  start
+            frame_size += 2;            //  end
             break;
     }
     //  Now serialize message into the frame
@@ -552,8 +599,9 @@ zre_msg_send (zre_msg_t *self, zsock_t *output)
 
     switch (self->id) {
         case ZRE_MSG_HELLO:
-            PUT_NUMBER1 (2);
+            PUT_NUMBER1 (3);
             PUT_NUMBER2 (self->sequence);
+            PUT_NUMBER2 (self->ack);
             PUT_STRING (self->endpoint);
             if (self->groups) {
                 PUT_NUMBER4 (zlist_size (self->groups));
@@ -581,42 +629,56 @@ zre_msg_send (zre_msg_t *self, zsock_t *output)
             break;
 
         case ZRE_MSG_WHISPER:
-            PUT_NUMBER1 (2);
+            PUT_NUMBER1 (3);
             PUT_NUMBER2 (self->sequence);
+            PUT_NUMBER2 (self->ack);
             nbr_frames += self->content? zmsg_size (self->content): 1;
             have_content = true;
             break;
 
         case ZRE_MSG_SHOUT:
-            PUT_NUMBER1 (2);
+            PUT_NUMBER1 (3);
             PUT_NUMBER2 (self->sequence);
+            PUT_NUMBER2 (self->ack);
             PUT_STRING (self->group);
             nbr_frames += self->content? zmsg_size (self->content): 1;
             have_content = true;
             break;
 
         case ZRE_MSG_JOIN:
-            PUT_NUMBER1 (2);
+            PUT_NUMBER1 (3);
             PUT_NUMBER2 (self->sequence);
+            PUT_NUMBER2 (self->ack);
             PUT_STRING (self->group);
             PUT_NUMBER1 (self->status);
             break;
 
         case ZRE_MSG_LEAVE:
-            PUT_NUMBER1 (2);
+            PUT_NUMBER1 (3);
             PUT_NUMBER2 (self->sequence);
+            PUT_NUMBER2 (self->ack);
             PUT_STRING (self->group);
             PUT_NUMBER1 (self->status);
             break;
 
         case ZRE_MSG_PING:
-            PUT_NUMBER1 (2);
+            PUT_NUMBER1 (3);
             PUT_NUMBER2 (self->sequence);
+            PUT_NUMBER2 (self->ack);
             break;
 
         case ZRE_MSG_PING_OK:
-            PUT_NUMBER1 (2);
+            PUT_NUMBER1 (3);
             PUT_NUMBER2 (self->sequence);
+            PUT_NUMBER2 (self->ack);
+            break;
+
+        case ZRE_MSG_RESEND:
+            PUT_NUMBER1 (3);
+            PUT_NUMBER2 (self->sequence);
+            PUT_NUMBER2 (self->ack);
+            PUT_NUMBER2 (self->start);
+            PUT_NUMBER2 (self->end);
             break;
 
     }
@@ -649,8 +711,9 @@ zre_msg_print (zre_msg_t *self)
     switch (self->id) {
         case ZRE_MSG_HELLO:
             zsys_debug ("ZRE_MSG_HELLO:");
-            zsys_debug ("    version=2");
+            zsys_debug ("    version=3");
             zsys_debug ("    sequence=%ld", (long) self->sequence);
+            zsys_debug ("    ack=%ld", (long) self->ack);
             zsys_debug ("    endpoint='%s'", self->endpoint);
             zsys_debug ("    groups=");
             if (self->groups) {
@@ -676,8 +739,9 @@ zre_msg_print (zre_msg_t *self)
 
         case ZRE_MSG_WHISPER:
             zsys_debug ("ZRE_MSG_WHISPER:");
-            zsys_debug ("    version=2");
+            zsys_debug ("    version=3");
             zsys_debug ("    sequence=%ld", (long) self->sequence);
+            zsys_debug ("    ack=%ld", (long) self->ack);
             zsys_debug ("    content=");
             if (self->content)
                 zmsg_print (self->content);
@@ -687,8 +751,9 @@ zre_msg_print (zre_msg_t *self)
 
         case ZRE_MSG_SHOUT:
             zsys_debug ("ZRE_MSG_SHOUT:");
-            zsys_debug ("    version=2");
+            zsys_debug ("    version=3");
             zsys_debug ("    sequence=%ld", (long) self->sequence);
+            zsys_debug ("    ack=%ld", (long) self->ack);
             zsys_debug ("    group='%s'", self->group);
             zsys_debug ("    content=");
             if (self->content)
@@ -699,30 +764,43 @@ zre_msg_print (zre_msg_t *self)
 
         case ZRE_MSG_JOIN:
             zsys_debug ("ZRE_MSG_JOIN:");
-            zsys_debug ("    version=2");
+            zsys_debug ("    version=3");
             zsys_debug ("    sequence=%ld", (long) self->sequence);
+            zsys_debug ("    ack=%ld", (long) self->ack);
             zsys_debug ("    group='%s'", self->group);
             zsys_debug ("    status=%ld", (long) self->status);
             break;
 
         case ZRE_MSG_LEAVE:
             zsys_debug ("ZRE_MSG_LEAVE:");
-            zsys_debug ("    version=2");
+            zsys_debug ("    version=3");
             zsys_debug ("    sequence=%ld", (long) self->sequence);
+            zsys_debug ("    ack=%ld", (long) self->ack);
             zsys_debug ("    group='%s'", self->group);
             zsys_debug ("    status=%ld", (long) self->status);
             break;
 
         case ZRE_MSG_PING:
             zsys_debug ("ZRE_MSG_PING:");
-            zsys_debug ("    version=2");
+            zsys_debug ("    version=3");
             zsys_debug ("    sequence=%ld", (long) self->sequence);
+            zsys_debug ("    ack=%ld", (long) self->ack);
             break;
 
         case ZRE_MSG_PING_OK:
             zsys_debug ("ZRE_MSG_PING_OK:");
-            zsys_debug ("    version=2");
+            zsys_debug ("    version=3");
             zsys_debug ("    sequence=%ld", (long) self->sequence);
+            zsys_debug ("    ack=%ld", (long) self->ack);
+            break;
+
+        case ZRE_MSG_RESEND:
+            zsys_debug ("ZRE_MSG_RESEND:");
+            zsys_debug ("    version=3");
+            zsys_debug ("    sequence=%ld", (long) self->sequence);
+            zsys_debug ("    ack=%ld", (long) self->ack);
+            zsys_debug ("    start=%ld", (long) self->start);
+            zsys_debug ("    end=%ld", (long) self->end);
             break;
 
     }
@@ -793,6 +871,9 @@ zre_msg_command (zre_msg_t *self)
         case ZRE_MSG_PING_OK:
             return ("PING_OK");
             break;
+        case ZRE_MSG_RESEND:
+            return ("RESEND");
+            break;
     }
     return "?";
 }
@@ -812,6 +893,24 @@ zre_msg_set_sequence (zre_msg_t *self, uint16_t sequence)
 {
     assert (self);
     self->sequence = sequence;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Get/set the ack field
+
+uint16_t
+zre_msg_ack (zre_msg_t *self)
+{
+    assert (self);
+    return self->ack;
+}
+
+void
+zre_msg_set_ack (zre_msg_t *self, uint16_t ack)
+{
+    assert (self);
+    self->ack = ack;
 }
 
 
@@ -1000,6 +1099,42 @@ zre_msg_set_group (zre_msg_t *self, const char *value)
 }
 
 
+//  --------------------------------------------------------------------------
+//  Get/set the start field
+
+uint16_t
+zre_msg_start (zre_msg_t *self)
+{
+    assert (self);
+    return self->start;
+}
+
+void
+zre_msg_set_start (zre_msg_t *self, uint16_t start)
+{
+    assert (self);
+    self->start = start;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Get/set the end field
+
+uint16_t
+zre_msg_end (zre_msg_t *self)
+{
+    assert (self);
+    return self->end;
+}
+
+void
+zre_msg_set_end (zre_msg_t *self, uint16_t end)
+{
+    assert (self);
+    self->end = end;
+}
+
+
 
 //  --------------------------------------------------------------------------
 //  Selftest
@@ -1036,6 +1171,7 @@ zre_msg_test (bool verbose)
     zre_msg_set_id (self, ZRE_MSG_HELLO);
 
     zre_msg_set_sequence (self, 123);
+    zre_msg_set_ack (self, 123);
     zre_msg_set_endpoint (self, "Life is short but Now lasts for ever");
     zlist_t *hello_groups = zlist_new ();
     zlist_append (hello_groups, "Name: Brutus");
@@ -1054,6 +1190,7 @@ zre_msg_test (bool verbose)
         zre_msg_recv (self, input);
         assert (zre_msg_routing_id (self));
         assert (zre_msg_sequence (self) == 123);
+        assert (zre_msg_ack (self) == 123);
         assert (streq (zre_msg_endpoint (self), "Life is short but Now lasts for ever"));
         zlist_t *groups = zre_msg_get_groups (self);
         assert (groups);
@@ -1075,6 +1212,7 @@ zre_msg_test (bool verbose)
     zre_msg_set_id (self, ZRE_MSG_WHISPER);
 
     zre_msg_set_sequence (self, 123);
+    zre_msg_set_ack (self, 123);
     zmsg_t *whisper_content = zmsg_new ();
     zre_msg_set_content (self, &whisper_content);
     zmsg_addstr (zre_msg_content (self), "Captcha Diem");
@@ -1086,6 +1224,7 @@ zre_msg_test (bool verbose)
         zre_msg_recv (self, input);
         assert (zre_msg_routing_id (self));
         assert (zre_msg_sequence (self) == 123);
+        assert (zre_msg_ack (self) == 123);
         assert (zmsg_size (zre_msg_content (self)) == 1);
         char *content = zmsg_popstr (zre_msg_content (self));
         assert (streq (content, "Captcha Diem"));
@@ -1096,6 +1235,7 @@ zre_msg_test (bool verbose)
     zre_msg_set_id (self, ZRE_MSG_SHOUT);
 
     zre_msg_set_sequence (self, 123);
+    zre_msg_set_ack (self, 123);
     zre_msg_set_group (self, "Life is short but Now lasts for ever");
     zmsg_t *shout_content = zmsg_new ();
     zre_msg_set_content (self, &shout_content);
@@ -1108,6 +1248,7 @@ zre_msg_test (bool verbose)
         zre_msg_recv (self, input);
         assert (zre_msg_routing_id (self));
         assert (zre_msg_sequence (self) == 123);
+        assert (zre_msg_ack (self) == 123);
         assert (streq (zre_msg_group (self), "Life is short but Now lasts for ever"));
         assert (zmsg_size (zre_msg_content (self)) == 1);
         char *content = zmsg_popstr (zre_msg_content (self));
@@ -1119,6 +1260,7 @@ zre_msg_test (bool verbose)
     zre_msg_set_id (self, ZRE_MSG_JOIN);
 
     zre_msg_set_sequence (self, 123);
+    zre_msg_set_ack (self, 123);
     zre_msg_set_group (self, "Life is short but Now lasts for ever");
     zre_msg_set_status (self, 123);
     //  Send twice
@@ -1129,12 +1271,14 @@ zre_msg_test (bool verbose)
         zre_msg_recv (self, input);
         assert (zre_msg_routing_id (self));
         assert (zre_msg_sequence (self) == 123);
+        assert (zre_msg_ack (self) == 123);
         assert (streq (zre_msg_group (self), "Life is short but Now lasts for ever"));
         assert (zre_msg_status (self) == 123);
     }
     zre_msg_set_id (self, ZRE_MSG_LEAVE);
 
     zre_msg_set_sequence (self, 123);
+    zre_msg_set_ack (self, 123);
     zre_msg_set_group (self, "Life is short but Now lasts for ever");
     zre_msg_set_status (self, 123);
     //  Send twice
@@ -1145,12 +1289,14 @@ zre_msg_test (bool verbose)
         zre_msg_recv (self, input);
         assert (zre_msg_routing_id (self));
         assert (zre_msg_sequence (self) == 123);
+        assert (zre_msg_ack (self) == 123);
         assert (streq (zre_msg_group (self), "Life is short but Now lasts for ever"));
         assert (zre_msg_status (self) == 123);
     }
     zre_msg_set_id (self, ZRE_MSG_PING);
 
     zre_msg_set_sequence (self, 123);
+    zre_msg_set_ack (self, 123);
     //  Send twice
     zre_msg_send (self, output);
     zre_msg_send (self, output);
@@ -1159,10 +1305,12 @@ zre_msg_test (bool verbose)
         zre_msg_recv (self, input);
         assert (zre_msg_routing_id (self));
         assert (zre_msg_sequence (self) == 123);
+        assert (zre_msg_ack (self) == 123);
     }
     zre_msg_set_id (self, ZRE_MSG_PING_OK);
 
     zre_msg_set_sequence (self, 123);
+    zre_msg_set_ack (self, 123);
     //  Send twice
     zre_msg_send (self, output);
     zre_msg_send (self, output);
@@ -1171,6 +1319,25 @@ zre_msg_test (bool verbose)
         zre_msg_recv (self, input);
         assert (zre_msg_routing_id (self));
         assert (zre_msg_sequence (self) == 123);
+        assert (zre_msg_ack (self) == 123);
+    }
+    zre_msg_set_id (self, ZRE_MSG_RESEND);
+
+    zre_msg_set_sequence (self, 123);
+    zre_msg_set_ack (self, 123);
+    zre_msg_set_start (self, 123);
+    zre_msg_set_end (self, 123);
+    //  Send twice
+    zre_msg_send (self, output);
+    zre_msg_send (self, output);
+
+    for (instance = 0; instance < 2; instance++) {
+        zre_msg_recv (self, input);
+        assert (zre_msg_routing_id (self));
+        assert (zre_msg_sequence (self) == 123);
+        assert (zre_msg_ack (self) == 123);
+        assert (zre_msg_start (self) == 123);
+        assert (zre_msg_end (self) == 123);
     }
 
     zre_msg_destroy (&self);

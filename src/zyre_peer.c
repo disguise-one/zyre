@@ -33,6 +33,9 @@ struct _zyre_peer_t {
     uint16_t want_sequence;     //  Incoming message sequence
     zhash_t *headers;           //  Peer headers
     bool verbose;               //  Do we log traffic & failures?
+    zlist_t *resend_window;     //  Outgoing messages that can be resent on request
+    size_t resend_window_sz;    //  Maximum size of resend window
+    zlist_t *deferred_msgs;     //  Incoming messages that were received out of order
 };
 
 
@@ -58,6 +61,9 @@ zyre_peer_new (zhash_t *container, zuuid_t *uuid)
     self->connected = false;
     self->sent_sequence = 0;
     self->want_sequence = 0;
+    self->resend_window = zlist_new();
+    self->resend_window_sz = 0;
+    self->deferred_msgs = zlist_new();
 
     //  Insert into container if requested
     if (container) {
@@ -79,6 +85,18 @@ zyre_peer_destroy (zyre_peer_t **self_p)
     if (*self_p) {
         zyre_peer_t *self = *self_p;
         zyre_peer_disconnect (self);
+        zre_msg_t *msg = (zre_msg_t *) zlist_pop (self->deferred_msgs);
+        while (msg) {
+            zre_msg_destroy (&msg);
+            msg = (zre_msg_t *) zlist_pop (self->deferred_msgs);
+        }
+        zlist_destroy (&self->deferred_msgs);
+        msg = (zre_msg_t *) zlist_pop (self->resend_window);
+        while (msg) {
+            zre_msg_destroy(&msg);
+            msg = (zre_msg_t *) zlist_pop (self->resend_window);
+        }
+        zlist_destroy (&self->resend_window);
         zhash_destroy (&self->headers);
         zuuid_destroy (&self->uuid);
         free (self->name);
@@ -117,7 +135,7 @@ zyre_peer_connect (zyre_peer_t *self, zuuid_t *from, const char *endpoint, uint6
     assert (rc == 0);
 
     //  Set a high-water mark that allows for reasonable activity
-    zsock_set_sndhwm (self->mailbox, expired_timeout * 100);
+    zsock_set_sndhwm (self->mailbox, int(expired_timeout * 100));
 
     //  Send messages immediately or return EAGAIN
     zsock_set_sndtimeo (self->mailbox, 0);
@@ -174,12 +192,20 @@ zyre_peer_send (zyre_peer_t *self, zre_msg_t **msg_p)
     if (self->connected) {
         self->sent_sequence += 1;
         zre_msg_set_sequence (msg, self->sent_sequence);
+        zlist_append (self->resend_window, zre_msg_dup (msg));
+        if (zlist_size (self->resend_window) > self->resend_window_sz) {
+            zre_msg_t *head = (zre_msg_t *) zlist_pop (self->resend_window);
+            zre_msg_destroy (&head);
+        }
+        zre_msg_set_ack (msg, self->want_sequence);
         if (self->verbose)
-            zsys_info ("(%s) send %s to peer=%s sequence=%d",
+            zsys_info ("(%s) send %s to peer=%s sequence=%d ack=%d, window size=%d",
                 self->origin,
                 zre_msg_command (msg),
                 self->name? self->name: "-",
-                zre_msg_sequence (msg));
+                zre_msg_sequence (msg),
+                zre_msg_ack (msg),
+                zlist_size (self->resend_window));
 
         if (zre_msg_send (msg, self->mailbox)) {
             if (errno == EAGAIN) {
@@ -187,6 +213,7 @@ zyre_peer_send (zyre_peer_t *self, zre_msg_t **msg_p)
                     zsys_info ("(%s) disconnect from peer (EAGAIN): name=%s",
                         self->origin, self->name);
                 zyre_peer_disconnect (self);
+                zre_msg_destroy (msg_p);
                 return -1;
             }
             //  Can't get any other error here
@@ -197,6 +224,104 @@ zyre_peer_send (zyre_peer_t *self, zre_msg_t **msg_p)
     zre_msg_destroy (msg_p);
 
     return 0;
+}
+
+
+//  ---------------------------------------------------------------------
+//  Resend message to peer
+
+int
+zyre_peer_resend (zyre_peer_t *self, uint16_t sequence_number)
+{
+    assert(self);
+    if (self->connected) {
+        // loop through all messages in the resend window, starting from the current cursor
+        zre_msg_t *msg = (zre_msg_t *) zlist_next (self->resend_window);
+        size_t iterations;
+        for (iterations = zlist_size (self->resend_window); iterations > 0; --iterations) {
+            if (!msg)
+                msg = (zre_msg_t *) zlist_first (self->resend_window);
+
+            if (zre_msg_sequence (msg) == sequence_number) 
+                break;
+
+            msg = (zre_msg_t *) zlist_next (self->resend_window);
+        }
+        if (!msg || zre_msg_sequence (msg) != sequence_number) {
+            zsys_warning ("(%s) resend failed to peer=%s, sequence_number=%d, sent_sequence=%d, window size=%d",
+                self->origin,
+                self->name ? self->name : "-",
+                sequence_number,
+                self->sent_sequence,
+                zlist_size (self->resend_window));
+
+            return 0;
+        }
+
+        zre_msg_set_ack (msg, self->want_sequence);
+        if (self->verbose)
+            zsys_info ("(%s) resend %s to peer=%s sequence=%d ack=%d",
+            self->origin,
+            zre_msg_command (msg),
+            self->name ? self->name : "-",
+            zre_msg_sequence (msg),
+            zre_msg_ack (msg));
+
+        if (zre_msg_send (msg, self->mailbox)) {
+            if (errno == EAGAIN) {
+                if (self->verbose)
+                    zsys_info ("(%s) disconnect from peer (EAGAIN): name=%s",
+                    self->origin, self->name);
+                zyre_peer_disconnect (self);
+                return -1;
+            }
+            //  Can't get any other error here
+            assert (false);
+        }
+    }
+
+    return 0;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Register message acknowledgements at peer
+
+void
+zyre_peer_ack (zyre_peer_t *self, uint16_t sequence_number)
+{
+    assert(self);
+    if (self->connected && zlist_size (self->resend_window) > 0) {
+        size_t count = 0;
+        zre_msg_t *msg = (zre_msg_t *) zlist_first (self->resend_window);
+        //  If the ack is a duplicate, the sequence number won't be in the window, so check
+        //  for the next sequence number at the head of the window
+        if (msg && sequence_number + 1 == zre_msg_sequence (msg)) {
+            return;
+        }
+        //  Find acked message
+        while (msg && sequence_number != zre_msg_sequence (msg)) {
+            ++count;
+            msg = (zre_msg_t *) zlist_next (self->resend_window);
+        }
+        if (!msg) {
+            //  Could not find sequence number in resend window (ACK possibly received after message has left window)
+            zsys_warning ("(%s) acknowledgement error from peer=%s ack=%d, sent_sequence=%d, window size=%d",
+                self->origin,
+                self->name ? self->name : "-",
+                sequence_number,
+                self->sent_sequence,
+                zlist_size (self->resend_window));
+            return;
+        }
+        //  Pop acked messages
+        msg = (zre_msg_t *) zlist_head (self->resend_window);
+        while (msg && count-- > 0) {
+            zlist_pop (self->resend_window);
+            zre_msg_destroy (&msg);
+            msg = (zre_msg_t *) zlist_head (self->resend_window);
+        }
+    }
 }
 
 
@@ -267,6 +392,28 @@ zyre_peer_expired_at (zyre_peer_t *self)
 {
     assert (self);
     return self->expired_at;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Return peer name
+
+size_t
+zyre_resend_window_size (zyre_peer_t *self)
+{
+    assert(self);
+    return self->resend_window_sz;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Set peer name
+
+void
+zyre_peer_set_resend_window_size (zyre_peer_t *self, size_t resend_window_sz)
+{
+    assert(self);
+    self->resend_window_sz = resend_window_sz;
 }
 
 
@@ -403,27 +550,153 @@ zyre_peer_messages_lost (zyre_peer_t *self, zre_msg_t *msg)
     //  The sequence number set by the peer, and our own calculated
     //  sequence number should be the same.
     if (self->verbose)
-        zsys_info ("(%s) recv %s from peer=%s sequence=%d",
+        zsys_info ("(%s) recv %s from peer=%s sequence=%d ack=%d",
             self->origin,
             zre_msg_command (msg),
             self->name? self->name: "-",
-            zre_msg_sequence (msg));
+            zre_msg_sequence (msg),
+            zre_msg_ack (msg));
+
+    uint16_t want_sequence = self->want_sequence;
 
     //  HELLO always MUST have sequence = 1
     if (zre_msg_id (msg) == ZRE_MSG_HELLO)
-        self->want_sequence = 1;
+        want_sequence = 1;
     else
-        self->want_sequence += 1;
+        want_sequence += 1;
 
-    if (self->want_sequence != zre_msg_sequence (msg)) {
+    if (want_sequence != zre_msg_sequence (msg)) {
         zsys_info ("(%s) seq error from peer=%s expect=%d, got=%d",
             self->origin,
             self->name? self->name: "-",
-            self->want_sequence,
+            want_sequence,
             zre_msg_sequence (msg));
         return true;
     }
+
+    self->want_sequence = want_sequence;
     return false;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Get resend window
+
+zlist_t *
+zyre_peer_resend_window (zyre_peer_t *self)
+{
+    assert(self);
+    return self->resend_window;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Get message that has been deferred due to arriving out of order, but is now valid.
+
+zre_msg_t *
+zyre_peer_deferred_message (zyre_peer_t *self)
+{
+    assert (self);
+
+    zre_msg_t *msg = (zre_msg_t *) zlist_head (self->deferred_msgs);
+    if (!msg)
+        return NULL;
+
+    uint16_t want_sequence = self->want_sequence;
+
+    //  HELLO always MUST have sequence = 1
+    if (zre_msg_id (msg) == ZRE_MSG_HELLO)
+        want_sequence = 1;
+    else
+        want_sequence += 1;
+
+    if (want_sequence != zre_msg_sequence(msg))
+        return NULL;
+
+    if (self->verbose)
+        if (self->verbose)
+            zsys_info ("(%s) recv deferred %s from peer=%s sequence=%d ack=%d",
+            self->origin,
+            zre_msg_command (msg),
+            self->name ? self->name : "-",
+            zre_msg_sequence (msg),
+            zre_msg_ack (msg));
+
+    zlist_pop (self->deferred_msgs);
+    self->want_sequence = want_sequence;
+
+    return msg;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Defer out of order message from peer, returns true if deferred
+
+bool
+zyre_peer_defer_message (zyre_peer_t *self, zre_msg_t *msg)
+{
+    assert (self);
+    assert (msg);
+
+    zre_msg_t *previous_msg = (zre_msg_t *) zlist_tail (self->deferred_msgs);
+    if (previous_msg) {
+        uint16_t want_sequence = zre_msg_sequence (previous_msg);
+        //  HELLO always MUST have sequence = 1
+        if (zre_msg_id (msg) == ZRE_MSG_HELLO)
+            want_sequence = 1;
+        else
+            want_sequence += 1;
+
+        if (want_sequence != zre_msg_sequence (msg)) {
+            zsys_info("(%s) deferred seq error from peer=%s expect=%d, got=%d",
+                self->origin,
+                self->name ? self->name : "-",
+                want_sequence,
+                zre_msg_sequence (msg));
+            return false;
+        }
+    }
+    else {
+        if (!self->connected) {
+            if (self->verbose)
+                zsys_info("(%s) cannot request resend from disconnected peer: name=%s",
+                self->origin, self->name);
+            return false;
+        }
+
+        // First deferral, request resend for missing range
+        zre_msg_t *req = zre_msg_new();
+        zre_msg_set_id (req, ZRE_MSG_RESEND);
+        zre_msg_set_sequence (req, 0); // processed out of sequence
+        zre_msg_set_start (req, self->want_sequence + 1);
+        zre_msg_set_end (req, zre_msg_sequence (msg));
+        zre_msg_set_ack (req, self->want_sequence);
+        if (self->verbose)
+            zsys_info ("(%s) send %s to peer=%s sequence start=%d end=%d ack=%d",
+            self->origin,
+            zre_msg_command (req),
+            self->name ? self->name : "-",
+            zre_msg_start (req),
+            zre_msg_end (req),
+            zre_msg_ack (req));
+
+        if (zre_msg_send (req, self->mailbox)) {
+            if (errno == EAGAIN) {
+                if (self->verbose)
+                    zsys_info ("(%s) disconnect from peer (EAGAIN): name=%s",
+                    self->origin, self->name);
+                zyre_peer_disconnect (self);
+                zre_msg_destroy (&req);
+                return false;
+            }
+            //  Can't get any other error here
+            assert (false);
+        }
+        zre_msg_destroy (&req);
+    }
+
+    // TODO: maximum limit on deferred messages
+    return (zlist_append (self->deferred_msgs, msg) == 0);
 }
 
 

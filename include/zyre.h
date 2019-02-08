@@ -43,9 +43,15 @@ ZYRE_EXPORT void
 ZYRE_EXPORT const char *
     zyre_uuid (zyre_t *self);
 
-//  Return our node name, after successful initialization
+//  Return our node name, after successful initialization. First 6
+//  characters of UUID by default.                                
 ZYRE_EXPORT const char *
     zyre_name (zyre_t *self);
+
+//  Set the public name of this node overriding the default. The name is
+//  provide during discovery and come in each ENTER message.            
+ZYRE_EXPORT void
+    zyre_set_name (zyre_t *self, const char *name);
 
 //  Set node header; these are provided to other nodes during discovery
 //  and come in each ENTER message.                                    
@@ -76,6 +82,10 @@ ZYRE_EXPORT void
 //  the beacon interval and rate of messages received.                 
 ZYRE_EXPORT void
     zyre_set_expired_timeout (zyre_t *self, int interval);
+
+//  Set resend window size, in messages. Default is 0 for no buffering.  
+ZYRE_EXPORT void
+    zyre_set_resend_window_size (zyre_t *self, size_t resend_window_sz);
 
 //  Set UDP beacon discovery interval, in milliseconds. Default is instant
 //  beacon exploration followed by pinging every 1,000 msecs.             

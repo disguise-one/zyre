@@ -48,6 +48,14 @@ const char *
 int
     zyre_peer_send (zyre_peer_t *self, zre_msg_t **msg_p);
 
+//  Resend message to peer
+int
+    zyre_peer_resend (zyre_peer_t *self, uint16_t sequence_number);
+
+//  Register message acknowledgements at peer
+void
+    zyre_peer_ack (zyre_peer_t *self, uint16_t sequence_number);
+
 //  Return peer identity string
 const char *
     zyre_peer_identity (zyre_peer_t *self);
@@ -63,6 +71,14 @@ int64_t
 //  Return peer future expired time
 int64_t
     zyre_peer_expired_at (zyre_peer_t *self);
+
+//  Return resend window size
+size_t
+    zyre_resend_window_size (zyre_peer_t *self);
+
+//  Set resend window size
+void
+    zyre_peer_set_resend_window_size (zyre_peer_t *self, size_t resend_window_sz);
 
 //  Return peer name
 const char *
@@ -107,6 +123,18 @@ void
 //  Check if messages were lost from peer, returns true if they were.
 bool
     zyre_peer_messages_lost (zyre_peer_t *self, zre_msg_t *msg);
+
+//  Get resend window
+zlist_t *
+    zyre_peer_resend_window (zyre_peer_t *self);
+
+//  Get message that has been deferred due to arriving out of order, but is now valid.
+zre_msg_t *
+    zyre_peer_deferred_message (zyre_peer_t *self);
+
+//  Defer out of order message from peer, returns true if deferred.
+bool
+    zyre_peer_defer_message (zyre_peer_t *self, zre_msg_t *msg);
 
 //  Ask peer to log all traffic via zsys
 void

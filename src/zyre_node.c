@@ -28,6 +28,7 @@ struct _zyre_node_t {
     int beacon_port;            //  Beacon port number
     uint64_t evasive_timeout;   //  Time since a message is received before a peer is considered evasive
     uint64_t expired_timeout;   //  Time since a message is received before a peer is considered gone
+    size_t resend_window_sz;    //  Maximum size of a peer's resend window
     size_t interval;            //  Beacon interval
     zpoller_t *poller;          //  Socket poller
     zactor_t *beacon;           //  Beacon actor
@@ -96,6 +97,7 @@ zyre_node_new (zsock_t *pipe, void *args)
     self->beacon_port = ZRE_DISCOVERY_PORT;
     self->evasive_timeout = 5000;
     self->expired_timeout = 30000;
+    self->resend_window_sz = 0;
     self->interval = 0;         //  Use default
     self->uuid = zuuid_new ();
     self->peers = zhash_new ();
@@ -364,6 +366,12 @@ zyre_node_recv_api (zyre_node_t *self)
     if (streq (command, "SET EXPIRED TIMEOUT")) {
         char *value = zmsg_popstr (request);
         self->expired_timeout = atoi (value);
+        zstr_free (&value);
+    }
+    else
+    if (streq (command, "SET RESEND WINDOW SIZE")) {
+        char *value = zmsg_popstr (request);
+        self->resend_window_sz = atoi (value);
         zstr_free (&value);
     }
     else
@@ -647,6 +655,7 @@ zyre_node_require_peer (zyre_node_t *self, zuuid_t *uuid, const char *endpoint)
         assert (peer);
         zyre_peer_set_origin (peer, self->name);
         zyre_peer_set_verbose (peer, self->verbose);
+        zyre_peer_set_resend_window_size (peer, self->resend_window_sz);
         int rc = zyre_peer_connect (peer, self->uuid, endpoint,
                 self->expired_timeout);
         if (rc != 0) {
@@ -779,66 +788,8 @@ zyre_node_leave_peer_group (zyre_node_t *self, zyre_peer_t *peer, const char *na
 //  Here we handle messages coming from other peers
 
 static void
-zyre_node_recv_peer (zyre_node_t *self)
+zyre_node_process_message (zyre_node_t *self, zyre_peer_t *peer, zuuid_t *uuid, zre_msg_t *msg)
 {
-    //  Router socket tells us the identity of this peer
-    zre_msg_t *msg = zre_msg_new ();
-    int rc = zre_msg_recv (msg, self->inbox);
-    if (rc == -1)
-        return;                 //  Interrupted
-    if (rc == -2) {
-        zre_msg_destroy (&msg);
-        return;                 //  Malformed
-    }
-
-    //  First frame is sender identity
-    byte *peerid_data = zframe_data (zre_msg_routing_id (msg));
-    size_t peerid_size = zframe_size (zre_msg_routing_id (msg));
-
-    //  Identity must be [1] followed by 16-byte UUID
-    if (peerid_size != ZUUID_LEN + 1) {
-        zre_msg_destroy (&msg);
-        return;
-    }
-    zuuid_t *uuid = zuuid_new ();
-    zuuid_set (uuid, peerid_data + 1);
-
-    //  On HELLO we may create the peer if it's unknown
-    //  On other commands the peer must already exist
-    zyre_peer_t *peer = (zyre_peer_t *) zhash_lookup (self->peers, zuuid_str (uuid));
-    if (zre_msg_id (msg) == ZRE_MSG_HELLO) {
-        if (peer) {
-            //  Remove fake peers
-            if (zyre_peer_ready (peer)) {
-                zyre_node_remove_peer (self, peer);
-                assert (!(zyre_peer_t *) zhash_lookup (self->peers, zuuid_str (uuid)));
-            }
-            else
-            if (streq (zuuid_str(uuid), zuuid_str(self->uuid))) {
-                //  We ignore HELLO, if peer has same uuid as current node
-                zre_msg_destroy (&msg);
-                zuuid_destroy (&uuid);
-                return;
-            }
-        }
-        peer = zyre_node_require_peer (self, uuid, zre_msg_endpoint (msg));
-        if (peer)
-            zyre_peer_set_ready (peer, true);
-    }
-    //  Ignore command if peer isn't ready
-    if (peer == NULL || !zyre_peer_ready (peer)) {
-        zre_msg_destroy (&msg);
-        zuuid_destroy (&uuid);
-        return;
-    }
-    if (zyre_peer_messages_lost (peer, msg)) {
-        zsys_warning ("(%s) messages lost from %s", self->name, zyre_peer_name (peer));
-        zyre_node_remove_peer (self, peer);
-        zre_msg_destroy (&msg);
-        zuuid_destroy (&uuid);
-        return;
-    }
-    //  Now process each command
     if (zre_msg_id (msg) == ZRE_MSG_HELLO) {
         //  Store properties from HELLO command into peer
         zyre_peer_set_name (peer, zre_msg_name (msg));
@@ -903,11 +854,126 @@ zyre_node_recv_peer (zyre_node_t *self)
         zyre_node_leave_peer_group (self, peer, zre_msg_group (msg));
         assert (zre_msg_status (msg) == zyre_peer_status (peer));
     }
+}
+
+static void
+zyre_node_recv_peer (zyre_node_t *self)
+{
+    //  Router socket tells us the identity of this peer
+    zre_msg_t *msg = zre_msg_new ();
+    int rc = zre_msg_recv (msg, self->inbox);
+    if (rc == -1)
+        return;                 //  Interrupted
+    if (rc == -2) {
+        zre_msg_destroy (&msg);
+        return;                 //  Malformed
+    }
+
+    //  First frame is sender identity
+    byte *peerid_data = zframe_data (zre_msg_routing_id (msg));
+    size_t peerid_size = zframe_size (zre_msg_routing_id (msg));
+
+    //  Identity must be [1] followed by 16-byte UUID
+    if (peerid_size != ZUUID_LEN + 1) {
+        zre_msg_destroy (&msg);
+        return;
+    }
+    zuuid_t *uuid = zuuid_new ();
+    zuuid_set (uuid, peerid_data + 1);
+
+    //  On HELLO we may create the peer if it's unknown
+    //  On other commands the peer must already exist
+    zyre_peer_t *peer = (zyre_peer_t *) zhash_lookup (self->peers, zuuid_str (uuid));
+    if (zre_msg_id (msg) == ZRE_MSG_HELLO) {
+        if (peer) {
+            //  Remove fake peers
+            if (zyre_peer_ready (peer)) {
+                zyre_node_remove_peer (self, peer);
+                assert (!(zyre_peer_t *) zhash_lookup (self->peers, zuuid_str (uuid)));
+            }
+            else
+            if (streq (zuuid_str (uuid), zuuid_str (self->uuid))) {
+                //  We ignore HELLO, if peer has same uuid as current node
+                zre_msg_destroy (&msg);
+                zuuid_destroy (&uuid);
+                return;
+            }
+        }
+        peer = zyre_node_require_peer (self, uuid, zre_msg_endpoint (msg));
+        if (peer)
+            zyre_peer_set_ready (peer, true);
+    }
+    //  Ignore command if peer isn't ready
+    if (peer == NULL || !zyre_peer_ready (peer)) {
+        zre_msg_destroy (&msg);
+        zuuid_destroy (&uuid);
+        return;
+    }
+    //  Process resends out of sequence, as they are needed ASAP
+    if (zre_msg_id (msg) == ZRE_MSG_RESEND) {
+        uint16_t start = zre_msg_start (msg);
+        uint16_t end = zre_msg_end (msg);
+        uint16_t sequence_number;
+
+        if (self->verbose)
+            zsys_info ("(%s) resending messages to peer=%s, start=%d, end=%d",
+            self->name,
+            zyre_peer_name (peer),
+            start,
+            end);
+
+        for (sequence_number = start; sequence_number != end; ++sequence_number) {
+            if (zyre_peer_resend (peer, sequence_number) != 0) {
+                zyre_node_remove_peer (self, peer);
+            }
+        }
+        zuuid_destroy (&uuid);
+        zre_msg_destroy (&msg);
+        return;
+    }
+    if (zyre_peer_messages_lost (peer, msg)) {
+        zsys_warning ("(%s) messages lost from %s", self->name, zyre_peer_name (peer));
+        if (!zyre_peer_defer_message (peer, msg)) {
+            zyre_node_remove_peer (self, peer);
+            zre_msg_destroy (&msg);
+            zuuid_destroy (&uuid);
+        }
+        else {
+            //  Message left in deferred queue 
+            zuuid_destroy(&uuid);
+        }
+        return;
+    }
+    //  Now process each command
+    zyre_node_process_message (self, peer, uuid, msg);
+    uint16_t ack_sequence_number = zre_msg_ack (msg);
     zuuid_destroy (&uuid);
     zre_msg_destroy (&msg);
 
     //  Activity from peer resets peer timers
     zyre_peer_refresh (peer, self->evasive_timeout, self->expired_timeout);
+
+    //  Message acks allow us to clean out the resend window
+    zyre_peer_ack (peer, ack_sequence_number);
+
+    //  Process deferred messages if we've caught up
+    msg = zyre_peer_deferred_message (peer);
+    while (msg) {
+        //  First frame is sender identity
+        byte *peerid_data = zframe_data (zre_msg_routing_id (msg));
+        size_t peerid_size = zframe_size (zre_msg_routing_id (msg));
+
+        assert (peerid_size == ZUUID_LEN + 1);
+
+        zuuid_t *uuid = zuuid_new ();
+        zuuid_set (uuid, peerid_data + 1);
+
+        zyre_node_process_message (self, peer, uuid, msg);
+        zuuid_destroy (&uuid);
+        zre_msg_destroy (&msg);
+
+        msg = zyre_peer_deferred_message (peer);
+    }
 }
 
 //  Handle beacon data
