@@ -56,6 +56,7 @@ node_actor (zsock_t *pipe, void *args)
         else
         if (streq (event, "WHISPER")) {
             to_peer = zmsg_popstr (incoming);
+            free (zmsg_popstr (incoming)); // peer name
             cookie = zmsg_popstr (incoming);
 
             //  If a message comes from perf_local,
@@ -72,6 +73,7 @@ node_actor (zsock_t *pipe, void *args)
         else
         if (streq (event, "SHOUT")) {
             to_peer = zmsg_popstr (incoming);
+            free (zmsg_popstr (incoming)); // peer name
             to_group = zmsg_popstr (incoming);
             cookie = zmsg_popstr (incoming);
 

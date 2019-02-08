@@ -26,6 +26,7 @@ s_node_recv (zyre_t *node, char* command, char* expected)
     char *event = zmsg_popstr (incoming);
     if (streq (event, command)) {
         char *peer = zmsg_popstr (incoming);
+        free(zmsg_popstr(incoming)); // peer name
         char *group = NULL;
         if (streq (command, "SHOUT"))
             group = zmsg_popstr (incoming);
@@ -94,6 +95,7 @@ main (int argc, char *argv [])
         else
         if (streq (event, "WHISPER")) {
             char *peer = zmsg_popstr (incoming);
+            free(zmsg_popstr(incoming)); // peer name
             char *cookie = zmsg_popstr (incoming);
 
             if (streq (cookie, "R:HELLO")) {
