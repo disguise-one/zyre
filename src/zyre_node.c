@@ -49,7 +49,7 @@ struct _zyre_node_t {
 
 //  Beacon frame has this format:
 //
-//  Z R E       3 bytes
+//  Z R E       3 bytes         !!! note that disguise changes this to D R E for compatibility reasons (DSOF-15932)
 //  version     1 byte, %x01
 //  UUID        16 bytes
 //  port        2 bytes in network order
@@ -211,7 +211,7 @@ zyre_node_stop (zyre_node_t *self)
     if (self->beacon) {
         //  Stop broadcast/listen beacon
         beacon_t beacon;
-        beacon.protocol [0] = 'Z';
+        beacon.protocol [0] = 'D'; // !!! note this is changed from the default Z R E for disguise for compatibility reasons (DSOF-15932)
         beacon.protocol [1] = 'R';
         beacon.protocol [2] = 'E';
         beacon.version = BEACON_VERSION;
@@ -995,6 +995,8 @@ zyre_node_recv_beacon (zyre_node_t *self)
     zframe_destroy (&frame);
     if (beacon.version != BEACON_VERSION)
         return;                 //  Garbage beacon, ignore it
+    if (beacon.protocol[0] != 'D' || beacon.protocol[1] != 'R' || beacon.protocol[2] != 'E')
+        return; // not a disguise flavoured zyre node
 
     zuuid_t *uuid = zuuid_new ();
     zuuid_set (uuid, beacon.uuid);
@@ -1127,7 +1129,7 @@ zyre_node_actor (zsock_t *pipe, void *args)
 
                     //  Set broadcast/listen beacon
                     beacon_t beacon;
-                    beacon.protocol[0] = 'Z';
+                    beacon.protocol[0] = 'D';
                     beacon.protocol[1] = 'R';
                     beacon.protocol[2] = 'E';
                     beacon.version = BEACON_VERSION;
@@ -1135,7 +1137,7 @@ zyre_node_actor (zsock_t *pipe, void *args)
                     zuuid_export(self->uuid, beacon.uuid);
                     zsock_send(self->beacon, "sbi", "PUBLISH",
                         (byte *)&beacon, sizeof(beacon_t), self->interval);
-                    zsock_send(self->beacon, "sb", "SUBSCRIBE", (byte *) "ZRE", 3);
+                    zsock_send(self->beacon, "sb", "SUBSCRIBE", (byte *) "DRE", 3);
                     zpoller_add(self->poller, self->beacon);
 
                     //  Start polling on inbox
